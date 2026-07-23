@@ -1,0 +1,27 @@
+# ------------------------------------------------------------------
+# Never commit these — they hold secrets or per-machine runtime data.
+# ------------------------------------------------------------------
+
+# Your real config (Kuma URLs, ports, KFM_SECRET_KEY, etc.)
+.env
+
+# Runtime data volume: saved map, servers.json (encrypted creds),
+# secret.key (the encryption key!), auth.json (admin password hash).
+# Keep the folder in git but ignore everything inside it.
+data/*
+!data/.gitkeep
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts / the zips we pass around
+*.zip
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

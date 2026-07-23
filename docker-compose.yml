@@ -1,0 +1,42 @@
+services:
+  kuma-flowmap:
+    build: .
+    container_name: kuma-flowmap
+    # .env is entirely optional — the app runs with sensible defaults and everything
+    # (login, servers) is configured in the web UI. Provide a .env only if you want to
+    # override the port, set your own KFM_SECRET_KEY, etc.
+    env_file:
+      - path: .env
+        required: false
+
+    # ---- run non-root ----
+    # The image already defaults to uid 10001. Kept explicit here so it's obvious.
+    user: "10001:0"
+
+    # ---- least-privilege hardening ----
+    security_opt:
+      - no-new-privileges:true      # process can never gain new privileges
+    cap_drop:
+      - ALL                          # drop every Linux capability (none are needed)
+    read_only: true                  # root filesystem is read-only...
+    tmpfs:
+      - /tmp                         # ...with a small writable tmpfs for scratch
+    # If the container ever refuses to start, the usual culprit is read_only.
+    # Set `read_only: false` and it'll run; everything else above still applies.
+
+    ports:
+      # HOST_BIND:HOST_PORT are read from .env.
+      #   HOST_BIND=0.0.0.0  -> reachable from your LAN (default)
+      #   HOST_BIND=192.168.1.225 -> only on that NIC
+      #   HOST_BIND=127.0.0.1 -> only via a reverse proxy on this box
+      # The app always listens on 8000 *inside* the container.
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8848}:8000"
+
+    volumes:
+      # named volume, owned by the non-root user inside the container
+      - kuma-flowmap-data:/app/data
+
+    restart: unless-stopped
+
+volumes:
+  kuma-flowmap-data:
