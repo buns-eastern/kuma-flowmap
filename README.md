@@ -25,7 +25,8 @@ Self-hosted, runs in Docker, works fully offline on your LAN.
 - **Installable PWA** — add it to a phone's home screen; mobile is a smooth, view-only board with
   pinch/zoom.
 - **Hardened container** — runs non-root, all Linux capabilities dropped, read-only root filesystem.
-
+- 
+<img width="1608" height="1058" alt="Screenshot 2026-07-23 000212" src="https://github.com/user-attachments/assets/81f6d5f3-192b-40cb-8f7e-f63b4fb5792a" />
 ---
 
 ## Quick start
