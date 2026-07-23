@@ -196,5 +196,5 @@ with [Drawflow](https://github.com/jerosoler/Drawflow) on the frontend (vendored
 
 ## License
 
-No license is set yet — add one before sharing widely. [MIT](https://choosealicense.com/licenses/mit/) is
-a common, permissive choice for a project like this.
+Released under the **[MIT License](LICENSE)** — use it, change it, self-host it, even sell it; just
+keep the copyright notice. No warranty. See the [`LICENSE`](LICENSE) file for the full text.
