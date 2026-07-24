@@ -93,6 +93,9 @@ page opens in **View** by default — you load it to check status, not to edit.
 - **Frame** — a labeled, transparent group box to draw *around* things. Double-click to rename; drag the
   corner handle to resize (frames snap to each other on both move and resize).
 - **Text** — a transparent rich-text note (per-character size, weight, and colour).
+- **Icon** — a standalone graphic from the built-in icon set. Drag a corner to resize (it stays crisp and
+  keeps its aspect ratio); its colour follows the theme by default (light on dark, dark on light) or you
+  can set a fixed colour, just like a text note. Double-click to swap the glyph.
 
 **Arrange precisely**
 - Drag to move; edge/center **alignment guides** and **equal-spacing guides** appear as you go.

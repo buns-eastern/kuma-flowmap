@@ -605,6 +605,28 @@
   #rt-bubble .rt-sw { width: 18px; height: 18px; min-width: 18px; padding: 0; border-radius: 5px; border: 1px solid rgba(150,160,190,.4); }
   #rt-bubble .rt-sw:hover { transform: scale(1.12); background: none; }
   body.view-mode #rt-bubble { display: none !important; }
+  /* ---- standalone icon graphic node ---- */
+  #drawflow .drawflow-node.cw-icon .card.iconnode {
+    background: transparent; border: 0; box-shadow: none; padding: 0;
+    display: flex; align-items: center; justify-content: center; overflow: visible;
+    color: var(--text);            /* default follows the theme: light on dark, dark on light */
+    width: 72px; height: 72px;
+  }
+  #drawflow .drawflow-node.cw-icon .icon-glyph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  #drawflow .drawflow-node.cw-icon .card.iconnode svg { width: 100%; height: 100%; display: block; fill: currentColor; }
+  #drawflow .drawflow-node.cw-icon.selected .card.iconnode,
+  #drawflow .drawflow-node.cw-icon.multi-selected .card.iconnode { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
+  /* icon colour bubble — mirrors the rich-text bubble */
+  #icon-bubble {
+    position: fixed; display: none; align-items: center; gap: 4px; z-index: 90;
+    transform: translate(-50%, -100%); padding: 5px 7px; border-radius: 11px;
+    background: linear-gradient(180deg, var(--modal-a), var(--modal-b));
+    border: 1px solid var(--border-2); box-shadow: 0 12px 30px rgba(0,0,0,.55);
+  }
+  #icon-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 9px; height: 9px; transform: translateX(-50%) rotate(45deg); background: var(--modal-b); border-right: 1px solid var(--border-2); border-bottom: 1px solid var(--border-2); }
+  #icon-bubble .rt-sw { width: 18px; height: 18px; min-width: 18px; padding: 0; border-radius: 5px; border: 1px solid rgba(150,160,190,.4); cursor: pointer; }
+  #icon-bubble .rt-sw:hover { transform: scale(1.12); }
+  body.view-mode #icon-bubble { display: none !important; }
   body.view-mode .resize-handle, body.mobile .card.textnode .resize-handle { display: none; }
   @keyframes popIn { 0% { transform: scale(.86); opacity: .2; } 60% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
   #drawflow .drawflow-node .card.pop-in { animation: popIn .34s cubic-bezier(.2,.8,.3,1.2); }
@@ -894,6 +916,7 @@
     <button class="btn" id="btn-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>Add Box</button>
     <button class="btn" id="btn-frame"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>Frame</button>
     <button class="btn" id="btn-text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 6V4M20 6V4M12 6v14M9 20h6"/></svg>Text</button>
+    <button class="btn" id="btn-icon" title="Add an icon graphic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-4.5-4.5L7 20"/></svg>Icon</button>
     <span id="save-status" class="save-status saved" title="Changes save automatically">Saved</span>
     <button class="btn primary" id="btn-save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7"/></svg>Save</button>
     <div class="mode">
@@ -972,6 +995,14 @@
         <button class="rt-sw" data-rt="color" data-c="#fbbf24" title="Amber" style="background:#fbbf24"></button>
         <button class="rt-sw" data-rt="color" data-c="#fb5a5c" title="Red" style="background:#fb5a5c"></button>
         <button class="rt-sw" data-rt="color" data-c="#c084fc" title="Purple" style="background:#c084fc"></button>
+      </div>
+      <div id="icon-bubble">
+        <button class="rt-sw" data-c="var(--text)" title="Theme colour (auto light / dark)" style="background:linear-gradient(135deg,#9aa7bd,#e6edf6)"></button>
+        <button class="rt-sw" data-c="#38bdf8" title="Blue" style="background:#38bdf8"></button>
+        <button class="rt-sw" data-c="#34d399" title="Green" style="background:#34d399"></button>
+        <button class="rt-sw" data-c="#fbbf24" title="Amber" style="background:#fbbf24"></button>
+        <button class="rt-sw" data-c="#fb5a5c" title="Red" style="background:#fb5a5c"></button>
+        <button class="rt-sw" data-c="#c084fc" title="Purple" style="background:#c084fc"></button>
       </div>
       <div id="layer-menu">
         <button class="lm-item" data-cmd="front">Bring to Front<span class="kbd">Ctrl+Shift+]</span></button>
@@ -1342,6 +1373,29 @@
     return id;
   }
 
+  // ---------------- standalone icon graphic ----------------
+  // A bare, resizable SVG glyph (no card, no status). Colour defaults to the theme's text
+  // colour (so it flips light/dark automatically) and can be overridden like a text note.
+  var DEFAULT_ICON_SIZE = 72;
+  function iconNodeHTML(key, color) {
+    return '<div class="card iconnode" data-icon="1"' + (color ? ' style="color:' + esc(color) + '"' : '') + '>' +
+      '<div class="icon-glyph" data-role="glyph">' + iconSVG(key) + '</div></div>';
+  }
+  function addIconNode(cx, cy, key, color) {
+    color = color || "";
+    var sz = DEFAULT_ICON_SIZE;
+    var data = { kind: "icon", icon: key, color: color };
+    var id = editor.addNode("icon", 0, 0, cx, cy, "cw-icon", data, iconNodeHTML(key, color));
+    meta[id] = { kind: "icon", icon: key, color: color, width: sz, height: sz };
+    var el = document.getElementById("node-" + id);
+    if (el) { var card = el.querySelector(".card"); if (card) { card.style.width = sz + "px"; card.style.height = sz + "px"; } }
+    decorate(id);
+    popIn(id);
+    hideEmptyHint();
+    computeMinimap();
+    return id;
+  }
+
   // rich-text editing state + the floating format bubble
   var _rtEditing = null;   // { id, rt, undo }
   function startTextEdit(id, rt) {
@@ -1506,6 +1560,7 @@
     card.appendChild(h);
     var isFrame = meta[id] && meta[id].kind === "frame";
     var isText = false;
+    var isIcon = meta[id] && meta[id].kind === "icon";
     h.addEventListener("mousedown", function (ev) {
       if (document.body.classList.contains("view-mode")) return;
       if (isLocked(id)) { ev.preventDefault(); ev.stopPropagation(); return; }   // locked -> no resize
@@ -1521,6 +1576,19 @@
         var maxW = isFrame ? 8000 : (isText ? 2000 : 900);
         var w = Math.max(isFrame ? 120 : (isText ? 70 : 200), Math.min(maxW, startW + (e.clientX - startX) / z));
         clearGuides();
+        if (isIcon) {
+          // aspect-locked square: drive by the larger delta, snap to another node's size
+          var d = Math.max((e.clientX - startX), (e.clientY - startY)) / z;
+          var s = Math.max(24, Math.min(600, startW + d));
+          var sthr = SNAP_SCREEN / z, m2 = null;
+          otherGeoms(id).forEach(function (o) {
+            if (Math.abs(o.w - s) <= sthr && (m2 === null || Math.abs(o.w - s) < Math.abs(m2 - s))) m2 = o.w;
+          });
+          if (m2 !== null) s = m2;
+          card.style.width = s + "px"; card.style.height = s + "px";
+          try { editor.updateConnectionNodes("node-" + id); } catch (_) {}
+          return;
+        }
         if (isFrame) {
           var hh = Math.max(90, Math.min(8000, startH + (e.clientY - startY) / z));
           // snap the moving right/bottom edges to other frames' edges (top-left stays put)
@@ -1553,6 +1621,7 @@
         if (meta[id]) {
           meta[id].width = Math.round(parseFloat(card.style.width) || startW);
           if (isFrame) meta[id].height = Math.round(parseFloat(card.style.height) || startH);
+          if (isIcon) { meta[id].height = meta[id].width; syncIconBubble(); }
         }
         computeMinimap();
       }
@@ -1708,6 +1777,14 @@
         rt.addEventListener("mouseup", function () { setTimeout(updateRtBubble, 0); });
         rt.addEventListener("keyup", updateRtBubble);
       }
+    } else if (info.kind === "icon") {
+      // double-click swaps the glyph; the colour bubble appears while it's selected
+      el.addEventListener("dblclick", function (ev) {
+        if (document.body.classList.contains("view-mode")) return;
+        ev.stopPropagation();
+        openIconPicker(id);
+      });
+      if (info.color) { var ic = el.querySelector(".card.iconnode"); if (ic) ic.style.color = info.color; }
     }
   }
 
@@ -1733,9 +1810,22 @@
     body.innerHTML = html;
     body.addEventListener("click", function (ev) {
       var item = ev.target.closest(".ip-item"); if (!item) return;
-      setIcon(pickerTarget, item.getAttribute("data-key"));
+      var key = item.getAttribute("data-key");
+      if (pickerTarget === "__new__") placeNewIcon(key);   // toolbar "Icon" -> drop a fresh graphic
+      else setIcon(pickerTarget, key);
       closeIconPicker();
     });
+  }
+  // place a brand-new standalone icon graphic at the center of the view
+  function placeNewIcon(key) {
+    if (!key) return;   // "None" chosen -> nothing to place
+    var pos = clientToCanvas(window.innerWidth / 2, window.innerHeight / 2);
+    pushUndo();
+    var id = addIconNode(pos.x - DEFAULT_ICON_SIZE / 2, pos.y - DEFAULT_ICON_SIZE / 2, key, "");
+    selectNodes([id], false);
+    syncIconBubble();
+    markDirty();
+    toast("Icon added — drag a corner to resize, pick a colour above");
   }
   function filterIcons(q) {
     q = (q || "").toLowerCase().trim();
@@ -1770,6 +1860,16 @@
     if (!meta[id]) return;
     key = key || "";
     if (key === (meta[id].icon || "")) return;
+    if (meta[id].kind === "icon") {
+      if (!key) return;                 // never blank a standalone icon graphic
+      pushUndo();
+      meta[id].icon = key;
+      try { editor.updateNodeDataFromId(id, { kind: "icon", icon: key, color: meta[id].color || "" }); } catch (e) {}
+      var gEl = document.getElementById("node-" + id);
+      var glyph = gEl && gEl.querySelector('[data-role="glyph"]');
+      if (glyph) glyph.innerHTML = iconSVG(key);
+      return;
+    }
     pushUndo();
     meta[id].icon = key;
     try {
@@ -1784,6 +1884,37 @@
       if (showKey) { iconEl.className = "node-icon"; iconEl.innerHTML = iconSVG(showKey); }
       else { iconEl.className = "node-icon empty"; iconEl.innerHTML = PLUS_SVG; }
     }
+  }
+
+  // ---------------- icon colour bubble ----------------
+  // Shows a little swatch row above a selected icon graphic (same colours as the text note
+  // bubble). The first swatch is "theme" -> stored as "" so the glyph keeps following the theme.
+  function iconBubble() { return document.getElementById("icon-bubble"); }
+  function hideIconBubble() { var b = iconBubble(); if (b) b.style.display = "none"; }
+  function syncIconBubble() {
+    var b = iconBubble(); if (!b) return;
+    if (document.body.classList.contains("view-mode")) { hideIconBubble(); return; }
+    var ids = Array.from(selected);
+    if (ids.length !== 1 || !meta[ids[0]] || meta[ids[0]].kind !== "icon") { hideIconBubble(); return; }
+    var el = document.getElementById("node-" + ids[0]); if (!el) { hideIconBubble(); return; }
+    var card = el.querySelector(".card") || el;
+    var r = card.getBoundingClientRect();
+    b.dataset.target = ids[0];
+    b.style.display = "flex";
+    b.style.left = Math.round(r.left + r.width / 2) + "px";
+    b.style.top = Math.round(r.top - 10) + "px";
+  }
+  function setIconColor(id, c) {
+    if (!meta[id] || meta[id].kind !== "icon") return;
+    var col = (c.indexOf("var(") === 0) ? "" : c;   // theme swatch -> "" (auto: follows the theme)
+    if (col === (meta[id].color || "")) return;
+    pushUndo();
+    meta[id].color = col;
+    try { editor.updateNodeDataFromId(id, { kind: "icon", icon: meta[id].icon || "", color: col }); } catch (e) {}
+    var el = document.getElementById("node-" + id);
+    var card = el && el.querySelector(".card.iconnode");
+    if (card) card.style.color = col || "";   // empty -> inherit var(--text)
+    markDirty();
   }
 
   // ---------------- live status ----------------
@@ -1980,6 +2111,8 @@
         content.innerHTML = frameHTML(info.title || "Group");
       } else if (info.kind === "text") {
         content.innerHTML = textHTML(info.html || "");
+      } else if (info.kind === "icon") {
+        content.innerHTML = iconNodeHTML(info.icon, info.color);
       }
       decorate(id);
     });
@@ -2430,7 +2563,9 @@
       document.getElementById("btn-add").style.display = "none";
       document.getElementById("btn-frame").style.display = "none";
       document.getElementById("btn-text").style.display = "none";
+      document.getElementById("btn-icon").style.display = "none";
       document.getElementById("btn-save").style.display = "none";
+      hideIconBubble();
     } else {
       document.body.classList.remove("view-mode");
       editor.editor_mode = "edit";
@@ -2439,6 +2574,7 @@
       document.getElementById("btn-add").style.display = "";
       document.getElementById("btn-frame").style.display = "";
       document.getElementById("btn-text").style.display = "";
+      document.getElementById("btn-icon").style.display = "";
       document.getElementById("btn-save").style.display = "";
     }
     markConnectors();
@@ -2735,11 +2871,13 @@
     var s = document.querySelector("#drawflow .drawflow-node.selected");   // drop Drawflow's own highlight too
     if (s) s.classList.remove("selected");
     if (editor) editor.node_selected = null;
+    if (typeof hideIconBubble === "function") hideIconBubble();
   }
   function selectNodes(ids, additive) {
     ids = expandGroups(ids);   // clicking one member of a group selects the whole group
     if (!additive) clearSelection();
     ids.forEach(function (id) { selected.add(String(id)); var el = document.getElementById("node-" + id); if (el) el.classList.add("multi-selected"); });
+    syncIconBubble();   // show/hide the icon colour swatches for a single selected graphic
   }
 
   // ---- groups + locks ----
@@ -3198,7 +3336,24 @@
       addTextNode(pos.x - 100, pos.y - 20, "");
       toast("Text added — type, then select text to change size / weight / colour");
     });
+    document.getElementById("btn-icon").addEventListener("click", function () {
+      openIconPicker("__new__");   // pick a glyph, then it drops onto the canvas
+    });
     document.getElementById("btn-save").addEventListener("click", saveLayout);
+
+    // icon colour bubble: click a swatch to recolour the selected graphic
+    var iconB = document.getElementById("icon-bubble");
+    if (iconB) {
+      iconB.addEventListener("mousedown", function (e) { e.preventDefault(); e.stopPropagation(); });  // keep the selection
+      iconB.addEventListener("click", function (e) {
+        var sw = e.target.closest(".rt-sw"); if (!sw) return;
+        var id = iconB.dataset.target; if (id) setIconColor(id, sw.getAttribute("data-c"));
+      });
+    }
+    // keep the icon bubble glued to its graphic as the canvas moves/zooms
+    editor.on("nodeMoved", function () { syncIconBubble(); });
+    editor.on("translate", function () { syncIconBubble(); });
+    editor.on("zoom", function () { syncIconBubble(); });
 
     // rich-text format bubble: mousedown+preventDefault keeps the text selection alive
     var rtBubble = document.getElementById("rt-bubble");

@@ -83,6 +83,9 @@ board). **The page opens in View** — click **Edit** when you want to change th
 - **Frame** makes a labeled, transparent group box to draw *around* things — double-click to rename, drag
   the corner handle to resize. Frames snap to each other when you move *and* resize them.
 - **Text** drops a transparent rich-text note (change size/weight/colour per character).
+- **Icon** drops a standalone graphic from the built-in icon set — drag a corner to resize (it keeps its
+  aspect ratio and stays crisp), recolour it (or leave it on **theme** so it auto-flips light/dark), and
+  double-click to swap the glyph.
 - **Wire things together:** drag from a node's **right-side dot** (output) to another node's **left-side
   dot** (input).
 
