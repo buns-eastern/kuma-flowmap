@@ -230,27 +230,45 @@
   .sensor-chip .grip { margin-left: auto; color: #3a4657; font-size: 15px; }
 
   .dot {
+    position: relative;
     width: 11px; height: 11px; border-radius: 50%; flex: none; background: var(--unknown);
     box-shadow: 0 0 0 3px rgba(255,255,255,.03);
   }
   .status-up { background: var(--up); box-shadow: 0 0 9px var(--up); }
-  .status-down { background: var(--down); box-shadow: 0 0 10px var(--down); animation: pulse 1.3s infinite; }
+  .status-down { background: var(--down); box-shadow: 0 0 10px var(--down); }
   .status-pending { background: var(--pending); box-shadow: 0 0 9px var(--pending); }
   .status-maintenance { background: var(--maint); box-shadow: 0 0 9px var(--maint); }
   .status-unknown { background: var(--unknown); }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(255,77,79,.55)} 70%{box-shadow:0 0 0 7px rgba(255,77,79,0)} 100%{box-shadow:0 0 0 0 rgba(255,77,79,0)} }
+  /* PERF, and the reasoning is worth keeping because the obvious fix is the wrong one.
+     The original pulse animated box-shadow SPREAD, which repaints the dot and the card behind it
+     on every frame, forever, for every down sensor — that's what made an idle board expensive.
+     The textbook fix is to animate transform/opacity instead, but those are COMPOSITED: the
+     browser hands each animating element its own layer, so a board with 60 alarms grows 60 extra
+     layers that the compositor must walk on every frame of every pan. Measured on a 209-node
+     map, that made panning *worse* than the box-shadow version (Layerize 0.4s -> 1.5s over a
+     2.6s pan) and it can't be undone mid-gesture, because the layers persist.
+     What actually works at scale is to animate a cheap, NON-composited property over a tiny
+     area: the dot's own colour. No pseudo-element, no layer, and the repainted region is 11px
+     square instead of a blurred halo across the whole card. */
+  #drawflow .status-down { animation: dotPulse 1.3s ease-in-out infinite; }
+  @keyframes dotPulse { 0%,100% { background: var(--down); } 50% { background: #ff9aa2; } }
 
-  /* alarm: a down node breathes a red glow so failures jump out */
-  @keyframes alarmGlow {
-    0%,100% { box-shadow: 0 0 0 1px rgba(255,77,79,.45), 0 8px 20px rgba(0,0,0,.4); border-color: var(--down); }
-    50%     { box-shadow: 0 0 0 2px rgba(255,77,79,.95), 0 0 24px 3px rgba(255,77,79,.6), 0 8px 20px rgba(0,0,0,.4); border-color: #ff8a8c; }
+  /* alarm: a down node breathes so failures jump out. Same rule as above — the glow itself is
+     static (rasterised once, then reused), and only the 1px border colour animates. */
+  .card.alarm {
+    border-color: var(--down) !important;
+    box-shadow: 0 0 0 1px rgba(255,77,79,.5), 0 0 18px -1px rgba(255,77,79,.5),
+                inset 0 0 22px -6px rgba(255,77,79,.75), var(--shadow);
+    animation: alarmEdge 1.25s ease-in-out infinite;
   }
-  @keyframes warnGlow {
-    0%,100% { box-shadow: 0 0 0 1px rgba(245,166,35,.30), 0 8px 20px rgba(0,0,0,.4); }
-    50%     { box-shadow: 0 0 0 2px rgba(245,166,35,.7), 0 0 16px rgba(245,166,35,.45), 0 8px 20px rgba(0,0,0,.4); }
+  .card.warn {
+    border-color: var(--pending) !important;
+    box-shadow: 0 0 0 1px rgba(245,166,35,.4), 0 0 14px -2px rgba(245,166,35,.4),
+                inset 0 0 18px -6px rgba(245,166,35,.6), var(--shadow);
+    animation: warnEdge 2s ease-in-out infinite;
   }
-  .card.alarm { border-color: var(--down) !important; animation: alarmGlow 1.25s ease-in-out infinite; }
-  .card.warn  { border-color: var(--pending) !important; animation: warnGlow 2s ease-in-out infinite; }
+  @keyframes alarmEdge { 0%,100% { border-color: var(--down); } 50% { border-color: #ff9aa2; } }
+  @keyframes warnEdge  { 0%,100% { border-color: var(--pending); } 50% { border-color: #ffd08a; } }
 
   /* ---------- Canvas ---------- */
   #canvas-wrap { position: relative; min-width: 0; }
@@ -500,14 +518,24 @@
      Edit mode stays solid so wiring is crisp. Respects reduced-motion preferences. */
   /* -20 is exactly 2× the dash period (3+7=10), so the loop wraps seamlessly — no gif-restart jump */
   @keyframes wireFlow { to { stroke-dashoffset: -20; } }
+  /* PERF: NO `filter:` on the healthy (animating) wires. An SVG filter on a path whose
+     stroke-dashoffset is animating cannot be cached — the browser re-rasterises that blurred
+     glow for every wire on every frame, forever, even while nobody is touching the screen. On a
+     board with 100+ links that alone saturates the main thread and leaves nothing for the pan.
+     The glow is kept where it actually carries meaning (down / warn wires below), and those
+     don't animate, so their filter is rasterised once and cached. Healthy wires get a slightly
+     brighter stroke instead, which reads the same at a glance. */
   body.view-mode #drawflow .connection .main-path {
+    stroke: color-mix(in srgb, var(--accent) 78%, var(--conn));
     stroke-dasharray: 3 7; stroke-width: 2.6px; stroke-linecap: round;
     animation: wireFlow 1.3s linear infinite;
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 45%, transparent));
   }
   @media (prefers-reduced-motion: reduce) {
     body.view-mode #drawflow .connection .main-path { animation: none; stroke-dasharray: none; }
   }
+  /* LOD: zoomed far out the 3px dashes are sub-pixel — nobody can see them flowing, but the
+     browser still repaints every path every frame. Freeze them until you zoom back in. */
+  body.zoom-far #drawflow .connection .main-path { animation: none !important; stroke-dasharray: none !important; }
   /* outage-aware wires: a link feeding a DOWN sensor turns red and stops flowing;
      a pending link goes amber. Healthy links keep the gentle flow above. */
   body.view-mode #drawflow .connection.conn-down .main-path {
@@ -523,7 +551,14 @@
      effects so moving the canvas stays smooth regardless of how many nodes are on screen. Blurred
      shadows and drop-shadow filters are the costliest to repaint each frame; animations are paused
      (not reset) so they resume seamlessly. Everything is restored ~220ms after the gesture ends. */
-  body.panning-fx #drawflow * { animation-play-state: paused !important; }
+  /* NOTE: deliberately NOT `#drawflow *`. A universal descendant selector makes the browser
+     re-match every element under the canvas the instant .panning-fx is added AND again when it
+     is removed — i.e. a style-recalc spike at the exact moment a gesture starts. Listing the
+     handful of elements that actually animate keeps that invalidation tiny. */
+  body.panning-fx #drawflow .connection .main-path,
+  body.panning-fx #drawflow .status-down,
+  body.panning-fx #drawflow .card.alarm,
+  body.panning-fx #drawflow .card.warn { animation-play-state: paused !important; }
   body.panning-fx #drawflow .card,
   body.panning-fx #drawflow .card.frame { box-shadow: none !important; }
   body.panning-fx #drawflow .connection .main-path { filter: none !important; }
@@ -531,6 +566,28 @@
   body.panning-fx #drawflow .card.alarm,
   body.panning-fx #drawflow .card.warn,
   body.panning-fx #drawflow .dot { box-shadow: none !important; }
+  body.panning-fx #drawflow .card.alarm::after,
+  body.panning-fx #drawflow .card.warn::after { opacity: .55 !important; }
+  /* A backdrop-filter sitting ON TOP of the moving canvas is one of the most expensive things
+     you can ask iOS to do: the blurred backdrop has to be re-sampled and re-blurred every frame
+     of the pan. Drop it for the duration of the gesture — nobody can see an 8px blur move. */
+  body.panning-fx .zoom-controls,
+  body.panning-fx #minimap { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  /* keeping this glued to a moving wire costs a getBoundingClientRect() (forced layout) every
+     frame; hide it for the gesture and re-place it once when things settle */
+  body.panning-fx #conn-del { visibility: hidden !important; }
+
+  /* Off-screen nodes/wires on a big map (see cullViewport). `content-visibility: hidden` is what
+     does the real work: it drops the whole subtree from rendering, which also releases the
+     compositor layers held by any alarm animations inside it — so the cost of a busy board is
+     bounded by what's on SCREEN rather than by how big the map is. JS pairs it with an explicit
+     contain-intrinsic-size taken from the node's real measured size, so offsetWidth /
+     getBoundingClientRect keep returning the truth and fit-to-view, marquee select, wire routing
+     and the minimap all carry on working against culled nodes.
+     `visibility: hidden` is the fallback for browsers without content-visibility (Safari < 18):
+     it still skips the paint, it just can't release the layer. Never `display: none` — that
+     would zero out the geometry everything else depends on. */
+  #drawflow .df-culled { visibility: hidden !important; content-visibility: hidden !important; }
   /* fade the stripped effects back in when the gesture ends (this transition is present ONLY during
      the brief restore window, so it never fades OUT on gesture start and never touches hover) */
   body.fx-restoring #drawflow .drawflow-node .card,
@@ -2155,6 +2212,7 @@
   // so a burst of edits collapses into one write and nothing is ever lost to a reload.
   function markDirty() {
     if (_suppressUndo) return;   // ignore programmatic rebuilds (load / undo restore)
+    invalidateCull();            // the map changed shape -> cached cull geometry is stale
     setSaveStatus("unsaved");
     clearTimeout(_autosaveT);
     _autosaveT = setTimeout(function () { _autosaveT = 0; saveLayout(true); }, 2500);
@@ -2206,6 +2264,7 @@
     if (Object.keys(nodes).length) hideEmptyHint(); else maybeShowEmptyHint();
     renderPalette();
     computeMinimap();
+    invalidateCull();
   }
 
   function loadLayout() {
@@ -2666,49 +2725,150 @@
   }
 
   // ---------------- zoom / pan ----------------
+  // PERF: applyTransform runs on EVERY frame of every pan / pinch / momentum glide, so anything
+  // in here is multiplied by ~60/sec. The element lookup is cached and the text is only written
+  // when the displayed percentage actually changes — writing identical text still dirties the
+  // header and costs a style pass.
+  var _zEl = null, _zShown = -1;
   function updateZoomReadout(z) {
-    var el = document.getElementById("z-level");
-    if (el) el.textContent = Math.round((z || editor.zoom) * 100) + "%";
+    var pct = Math.round((z || editor.zoom) * 100);
+    if (pct === _zShown) return;
+    _zShown = pct;
+    if (!_zEl) _zEl = document.getElementById("z-level");
+    if (_zEl) _zEl.textContent = pct + "%";
   }
-  var _miniT = 0;
-  // redraw the minimap shortly AFTER a pan/zoom settles rather than every single frame —
-  // keeps the canvas itself buttery during the gesture.
-  function scheduleMinimapSoon() {
-    if (_miniT) return;
-    _miniT = setTimeout(function () { _miniT = 0; scheduleMinimap(); }, 100);
-  }
+  // (the minimap is redrawn once when a gesture settles — see endGesture)
   var _gpuT = 0;
   // While a gesture (pan/zoom/momentum) is running: (1) GPU-composite the canvas, and (2) add
   // .panning-fx which strips the expensive per-frame paint (card shadows, the wire glow filter,
   // the flow + alarm animations) so the transform stays butter-smooth no matter how much is on
   // screen. Both are dropped ~220ms after the gesture settles, restoring the full look.
-  var _fxT = 0;
+  var _fxT = 0, _gestureOn = false;
+  // PERF: this is called once per frame, so the class writes are guarded by a boolean. Calling
+  // classList.add() with a token that is already present is cheap but not free, and more
+  // importantly the old code called classList.remove("fx-restoring") + clearTimeout/setTimeout
+  // on every single frame of every gesture.
   function markGpuActive() {
-    editor.precanvas.style.willChange = "transform";
-    document.body.classList.add("panning-fx");
-    document.body.classList.remove("fx-restoring");
-    if (_fxT) { clearTimeout(_fxT); _fxT = 0; }
+    if (!_gestureOn) {
+      _gestureOn = true;
+      editor.precanvas.style.willChange = "transform";
+      document.body.classList.add("panning-fx");
+      document.body.classList.remove("fx-restoring");
+      if (_fxT) { clearTimeout(_fxT); _fxT = 0; }
+    }
     if (_gpuT) clearTimeout(_gpuT);
-    _gpuT = setTimeout(function () {
-      _gpuT = 0;
-      editor.precanvas.style.willChange = "auto";
-      // fade the effects back in (fx-restoring only adds the transition briefly, so it never
-      // slows the gesture start and never affects hover)
-      document.body.classList.add("fx-restoring");
-      document.body.classList.remove("panning-fx");
-      _fxT = setTimeout(function () { _fxT = 0; document.body.classList.remove("fx-restoring"); }, 360);
-    }, 200);
+    _gpuT = setTimeout(endGesture, 200);
   }
+  function endGesture() {
+    _gpuT = 0;
+    _gestureOn = false;
+    editor.precanvas.style.willChange = "auto";
+    // fade the effects back in (fx-restoring only adds the transition briefly, so it never
+    // slows the gesture start and never affects hover)
+    document.body.classList.add("fx-restoring");
+    document.body.classList.remove("panning-fx");
+    _fxT = setTimeout(function () { _fxT = 0; document.body.classList.remove("fx-restoring"); }, 360);
+    // deferred work that must NOT run per-frame: these read layout (forced reflow) or repaint
+    // a canvas, and doing either mid-gesture is what turns a 16ms frame into a 40ms one.
+    if (_selConn) positionConnDel();
+    cullViewport(true);
+    scheduleMinimap();
+  }
+  // ---------------- viewport culling (only kicks in on large maps) ----------------
+  // On a board with hundreds of sensors most of them are off-screen at any moment, but the
+  // browser still keeps their content alive — and, worse, every off-screen wire keeps running its
+  // flow animation, repainting forever. Hiding what you can't see is the single biggest lever on
+  // iOS, where texture memory (not CPU) is usually what runs out first.
+  //
+  // Two deliberate choices:
+  //  * `visibility: hidden`, never `display: none` — layout is preserved, so offsetWidth,
+  //    getBoundingClientRect, fit-to-view, marquee select, wire routing and the minimap all
+  //    continue to see culled nodes exactly as before. Nothing downstream needs to know.
+  //  * a generous margin plus hysteresis — we only re-run the pass once the visible area has
+  //    drifted outside the region we last culled for, so this costs nothing on a normal pan.
+  var CULL_MIN = 80;    // under this many nodes, culling would cost more than it saves
+  var CULL_PAD = 0.6;   // keep this many extra viewport-widths alive around what's on screen
+  var _cullGeom = null, _cullConns = null, _cullRect = null, _cullEl = null;
+  function invalidateCull() { _cullGeom = null; }
+  function cullContainer() { return _cullEl || (_cullEl = document.getElementById("drawflow")); }
+  function unCullAll() {
+    var hidden = cullContainer().querySelectorAll(".df-culled");
+    for (var i = 0; i < hidden.length; i++) hidden[i].classList.remove("df-culled");
+  }
+  function buildCullGeom() {
+    var m = nodeMap(), ids = Object.keys(m);
+    _cullRect = null;
+    if (ids.length < CULL_MIN) { _cullGeom = _cullConns = null; unCullAll(); return; }
+    var geom = [], byId = {};
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i], d = m[id], el = document.getElementById("node-" + id);
+      if (!el || !d) continue;
+      var g = { el: el, x: d.pos_x, y: d.pos_y, w: el.offsetWidth || 220, h: el.offsetHeight || 90, off: false };
+      byId[id] = g; geom.push(g);
+    }
+    // a wire can only be hidden when BOTH of the nodes it joins are off-screen — otherwise it
+    // still has to be drawn running off the edge of the view
+    var conns = [], svgs = cullContainer().querySelectorAll(".connection");
+    for (var j = 0; j < svgs.length; j++) {
+      var cls = svgs[j].getAttribute("class") || "";
+      var a = /node_in_node-(\w+)/.exec(cls), b = /node_out_node-(\w+)/.exec(cls);
+      if (!a || !b) continue;
+      var ga = byId[a[1]], gb = byId[b[1]];
+      if (ga && gb) conns.push({ el: svgs[j], a: ga, b: gb, off: false });
+    }
+    _cullGeom = geom; _cullConns = conns;
+  }
+  function cullViewport(settled) {
+    if (settled || !_cullGeom) buildCullGeom();
+    if (!_cullGeom) return;
+    var c = cullContainer(), z = editor.zoom || 1;
+    var vw = c.clientWidth, vh = c.clientHeight;
+    // what's actually visible right now, in canvas coordinates
+    var vL = -editor.canvas_x / z, vT = -editor.canvas_y / z;
+    var vR = (vw - editor.canvas_x) / z, vB = (vh - editor.canvas_y) / z;
+    // still comfortably inside the area we last culled for? then there is nothing to do.
+    if (!settled && _cullRect && vL >= _cullRect.L && vT >= _cullRect.T && vR <= _cullRect.R && vB <= _cullRect.B) return;
+    var padX = (vw * CULL_PAD) / z, padY = (vh * CULL_PAD) / z;
+    var L = vL - padX, T = vT - padY, R = vR + padX, B = vB + padY;
+    _cullRect = { L: L, T: T, R: R, B: B };
+    var g = _cullGeom, i, n, off;
+    for (i = 0; i < g.length; i++) {
+      n = g[i];
+      off = n.x > R || n.x + n.w < L || n.y > B || n.y + n.h < T;
+      if (off !== n.off) {
+        n.off = off;
+        // pin the size before hiding, so containment can't collapse the box (see .df-culled)
+        n.el.style.containIntrinsicSize = off ? (n.w + "px " + n.h + "px") : "";
+        n.el.classList.toggle("df-culled", off);
+      }
+    }
+    var cs = _cullConns;
+    for (i = 0; i < cs.length; i++) {
+      n = cs[i];
+      off = n.a.off && n.b.off;
+      if (off !== n.off) { n.off = off; n.el.classList.toggle("df-culled", off); }
+    }
+  }
+
+  var _zoomFar = false;
   function applyTransform(zoom, x, y) {
     editor.zoom = zoom;
     editor.zoom_last_value = zoom;
     editor.canvas_x = x;
     editor.canvas_y = y;
-    editor.precanvas.style.transform = "translate(" + x + "px, " + y + "px) scale(" + zoom + ")";
+    // translate3d (not translate) so the canvas keeps its own compositor layer on iOS —
+    // Safari is noticeably more willing to promote a 3D transform.
+    editor.precanvas.style.transform = "translate3d(" + x + "px, " + y + "px, 0) scale(" + zoom + ")";
     markGpuActive();
     updateZoomReadout(zoom);
-    scheduleMinimapSoon();
-    if (_selConn) positionConnDel();
+    // level-of-detail: below ~50% the flowing dashes are invisible anyway, so stop paying for them
+    var far = zoom < 0.5;
+    if (far !== _zoomFar) { _zoomFar = far; document.body.classList.toggle("zoom-far", far); }
+    cullViewport(false);
+    // NOTE: the minimap redraw and the connection-delete-button repositioning used to happen
+    // here, on every frame. positionConnDel() calls getBoundingClientRect(), which forces a
+    // synchronous layout — the single most reliable way to drop frames. Both now run once, in
+    // endGesture(), when the gesture settles.
   }
   function resetView() { applyTransform(1, 0, 0); }
   // zoom toward a point (mx,my in #drawflow-local px) so that point stays put
@@ -2730,7 +2890,11 @@
     var mRaf = 0;                                    // momentum rAF
     var vx = 0, vy = 0, lx = 0, ly = 0, lt = 0;      // velocity tracking (px per ms)
     function dist(a, b) { return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY); }
-    function midRel(a, b) { var dr = container.getBoundingClientRect(); return { x: (a.clientX + b.clientX) / 2 - dr.left, y: (a.clientY + b.clientY) / 2 - dr.top }; }
+    // cache the container rect for the duration of a gesture — getBoundingClientRect() forces a
+    // synchronous layout, and pinch-zoom called it on every touchmove
+    var _cRect = null;
+    function cRect() { return _cRect || (_cRect = container.getBoundingClientRect()); }
+    function midRel(a, b) { var dr = cRect(); return { x: (a.clientX + b.clientX) / 2 - dr.left, y: (a.clientY + b.clientY) / 2 - dr.top }; }
     function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
     function schedule(fn) {
       tPending = fn;
@@ -2750,9 +2914,20 @@
         if (Math.hypot(vx, vy) > 0.02) mRaf = requestAnimationFrame(step); else mRaf = 0;
       })(last);
     }
+    // On a touch device that is NOT in view-only mobile mode (an iPad, a touchscreen laptop) the
+    // user still needs to drag nodes and draw wires with a finger. So: a one-finger touch that
+    // starts on a node in edit mode is left to Drawflow. Anything else — empty canvas, view
+    // mode, or any two-finger gesture — is ours.
+    function fingerOnNode(e) {
+      if (document.body.classList.contains("view-mode") || document.body.classList.contains("mobile")) return false;
+      var t = e.target;
+      return !!(t && t.closest && t.closest(".drawflow-node"));
+    }
     container.addEventListener("touchstart", function (e) {
+      if (e.touches.length === 1 && fingerOnNode(e)) { pan = null; pinch = null; _cRect = null; return; }
       e.stopPropagation();
       stopMomentum();
+      _cRect = null;                                   // re-read the container rect once per gesture
       if (e.touches.length >= 2) {
         var m = midRel(e.touches[0], e.touches[1]);
         pinch = { d0: dist(e.touches[0], e.touches[1]), z0: editor.zoom, px: (m.x - editor.canvas_x) / editor.zoom, py: (m.y - editor.canvas_y) / editor.zoom };
@@ -2765,6 +2940,7 @@
       }
     }, { capture: true, passive: false });
     container.addEventListener("touchmove", function (e) {
+      if (!pan && !pinch) return;                      // a node drag we deliberately didn't claim
       e.stopPropagation(); e.preventDefault();
       if (pinch && e.touches.length >= 2) {
         var zmin = editor.zoom_min || 0.2, zmax = editor.zoom_max || 2.5;
@@ -2784,10 +2960,11 @@
       }
     }, { capture: true, passive: false });
     container.addEventListener("touchend", function (e) {
+      if (!pan && !pinch) return;
       e.stopPropagation();
       if (e.touches.length === 0) {
         if (pan && (now() - lt) < 90) startMomentum();  // only glide if the finger was still moving
-        pan = null; pinch = null;
+        pan = null; pinch = null; _cRect = null;
       } else if (e.touches.length === 1) {
         var t1 = e.touches[0];
         pan = { mx: t1.clientX, my: t1.clientY, cx0: editor.canvas_x, cy0: editor.canvas_y };
@@ -3180,10 +3357,24 @@
     selectNodes(hits.concat(Array.from(_marq.base)), false);
   }
 
+  // PERF: mouse pan is rAF-coalesced exactly like the wheel-zoom and the touch handlers already
+  // were. A gaming mouse fires mousemove at 500–1000Hz; transforming the whole canvas on each of
+  // those means ~8–16 full transforms per displayed frame, all but the last one wasted work that
+  // still costs style + composite. Now we record the latest position and transform once a frame.
+  var _panRaf = 0, _panTo = null;
+  function schedulePan(x, y) {
+    _panTo = { x: x, y: y };
+    if (_panRaf) return;
+    _panRaf = requestAnimationFrame(function () {
+      _panRaf = 0;
+      var p = _panTo; _panTo = null;
+      if (p && _pan) applyTransform(editor.zoom, p.x, p.y);
+    });
+  }
   function onSmartDragMove(e) {
     if (_pan) {
       if (Math.abs(e.clientX - _pan.mx) + Math.abs(e.clientY - _pan.my) > 4) _panMoved = true;
-      applyTransform(editor.zoom, _pan.cx0 + (e.clientX - _pan.mx), _pan.cy0 + (e.clientY - _pan.my)); return;
+      schedulePan(_pan.cx0 + (e.clientX - _pan.mx), _pan.cy0 + (e.clientY - _pan.my)); return;
     }
     if (_marq) { updateMarquee(e); return; }
     if (!editor.drag || !_drag) return;
@@ -3247,7 +3438,12 @@
     }
   }
   function endSmartDrag() {
-    if (_pan) { _pan = null; document.body.classList.remove("panning"); }
+    if (_pan) {
+      // flush any frame that was still queued, so the canvas lands exactly where the mouse did
+      if (_panRaf) { cancelAnimationFrame(_panRaf); _panRaf = 0; }
+      if (_panTo) { applyTransform(editor.zoom, _panTo.x, _panTo.y); _panTo = null; }
+      _pan = null; document.body.classList.remove("panning");
+    }
     if (_marq) { document.getElementById("marquee").style.display = "none"; _marq = null; }
     if (_drag && _didMove && _moveUndo) commitUndo(_moveUndo);   // record the move for undo
     if (_drag && _didMove) computeMinimap();
@@ -3279,6 +3475,14 @@
 
   // phone/tablet with a coarse (touch) primary pointer -> view-only
   var IS_MOBILE = window.matchMedia("(pointer: coarse)").matches && window.innerWidth < 900;
+  // IS_MOBILE decides the *UI* (view-only, no palette). Whether we drive pan/zoom ourselves is a
+  // separate question, and it used to be wrongly tied to the same flag: an iPad is `pointer:
+  // coarse` but wider than 900px, so it fell through to Drawflow's built-in touch handling,
+  // which writes a transform straight from every touchmove with no rAF coalescing. iOS samples
+  // touch faster than it paints, so that path does several full canvas transforms per frame and
+  // feels like dragging through treacle. Any touch-capable device now gets the smooth path.
+  var HAS_TOUCH = window.matchMedia("(pointer: coarse)").matches ||
+                  ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
 
   // ---------------- init ----------------
   document.addEventListener("DOMContentLoaded", function () {
@@ -3355,16 +3559,20 @@
     }, true);
     // keep the delete button glued to the wire while panning, and show a cursor hint
     // when hovering near a wire. rAF-throttled so the hit-test never runs per-pixel.
-    var _hoverRaf = false, _lastMx = 0, _lastMy = 0, _overNode = false;
+    var _hoverRaf = false, _lastMx = 0, _lastMy = 0, _overNode = false, _hoverTarget = null;
     document.addEventListener("mousemove", function (e) {
-      if (_selConn && (_drag || _pan)) positionConnDel();
+      if (_selConn && _drag) positionConnDel();   // (during a PAN the button is hidden by CSS)
       _lastMx = e.clientX; _lastMy = e.clientY;
-      // cheap check now so the per-frame geometric hit-test can be skipped over nodes
-      _overNode = !!(e.target && e.target.closest && e.target.closest(".drawflow-node"));
+      _hoverTarget = e.target;
       if (_hoverRaf) return;
       _hoverRaf = true;
       requestAnimationFrame(function () {
         _hoverRaf = false;
+        // PERF: `closest()` walks up the DOM tree. It used to run on EVERY mousemove event —
+        // which, with a 1000Hz mouse, is ~16 tree walks per frame, 15 of them discarded. Doing
+        // it inside the rAF means exactly one walk per rendered frame.
+        var ht = _hoverTarget;
+        _overNode = !!(ht && ht.closest && ht.closest(".drawflow-node"));
         // skip the (costly) wire hit-test while dragging, panning, in view mode, or hovering a
         // node — that per-frame scan over every wire was a big part of the hover stutter.
         if (_drag || _pan || _marq || _overNode || document.body.classList.contains("view-mode")) {
@@ -3648,7 +3856,7 @@
         applyStatus();
         connectWS();
         setMode("view");   // always open in View — you load the page to check status, not to edit
-        if (IS_MOBILE) setupTouch(container);
+        if (HAS_TOUCH) setupTouch(container);   // phones, tablets AND touchscreen desktops
         // frame the saved map so it's readable straight away
         setTimeout(function () { fitView(); computeMinimap(); }, 80);
       });
