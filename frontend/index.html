@@ -2888,7 +2888,35 @@
     var pan = null, pinch = null;
     var tRaf = 0, tPending = null;                  // rAF-coalesced transform
     var mRaf = 0;                                    // momentum rAF
-    var vx = 0, vy = 0, lx = 0, ly = 0, lt = 0;      // velocity tracking (px per ms)
+    var vx = 0, vy = 0, lt = 0;                      // launch velocity (px per ms) + last move time
+    // Flick physics. Getting this wrong doesn't show up in any profiler — the frame rate is
+    // perfect and it still feels wrong, because "heavy" is about how far the board travels
+    // relative to how hard you threw it, not about smoothness.
+    //   DECEL: iOS UIScrollView's normal deceleration rate. The old value here worked out to
+    //   0.9963/ms, ~1.8x more friction than the system, so every flick stopped about half way
+    //   to where your thumb aimed it. That reads as a heavy object, not a slow one.
+    //   MAX_V: sanity cap so a violent flick can't fling an unbounded canvas into empty space.
+    var DECEL = 0.998, V_STOP = 0.04, MAX_V = 6;
+    // Launch velocity is measured over a short trailing WINDOW of real samples rather than an
+    // exponential average. An EMA always lags, and it lags most exactly when it matters — when
+    // you accelerate into the release — so it consistently under-reports the throw.
+    var samples = [], V_WINDOW = 90;
+    function resetSamples() { samples.length = 0; }
+    function pushSample(x, y, t) {
+      samples.push(x, y, t);
+      while (samples.length > 6 && t - samples[2] > V_WINDOW) samples.splice(0, 3);
+    }
+    function launchVelocity() {
+      if (samples.length < 6) return false;
+      var n = samples.length;
+      var dt = samples[n - 1] - samples[2];
+      if (dt < 12) return false;                     // too short a window to trust
+      vx = (samples[n - 3] - samples[0]) / dt;
+      vy = (samples[n - 2] - samples[1]) / dt;
+      var sp = Math.hypot(vx, vy);
+      if (sp > MAX_V) { vx *= MAX_V / sp; vy *= MAX_V / sp; }
+      return sp > 0.05;                              // below this it was a tap/drag, not a flick
+    }
     function dist(a, b) { return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY); }
     // cache the container rect for the duration of a gesture — getBoundingClientRect() forces a
     // synchronous layout, and pinch-zoom called it on every touchmove
@@ -2903,15 +2931,14 @@
     }
     function stopMomentum() { if (mRaf) { cancelAnimationFrame(mRaf); mRaf = 0; } }
     function startMomentum() {
-      var speed = Math.hypot(vx, vy);
-      if (speed < 0.05) return;                       // too slow -> no glide
+      if (!launchVelocity()) return;                  // a drag, not a throw
       var last = now();
       (function step(t) {
         var dt = Math.min(40, t - last); last = t;
         applyTransform(editor.zoom, editor.canvas_x + vx * dt, editor.canvas_y + vy * dt);
-        var decay = Math.pow(0.94, dt / 16.67);       // frame-rate-independent friction
+        var decay = Math.pow(DECEL, dt);              // frame-rate-independent friction
         vx *= decay; vy *= decay;
-        if (Math.hypot(vx, vy) > 0.02) mRaf = requestAnimationFrame(step); else mRaf = 0;
+        if (Math.hypot(vx, vy) > V_STOP) mRaf = requestAnimationFrame(step); else mRaf = 0;
       })(last);
     }
     // On a touch device that is NOT in view-only mobile mode (an iPad, a touchscreen laptop) the
@@ -2935,7 +2962,7 @@
       } else if (e.touches.length === 1) {
         var t0 = e.touches[0];
         pan = { mx: t0.clientX, my: t0.clientY, cx0: editor.canvas_x, cy0: editor.canvas_y };
-        vx = vy = 0; lx = t0.clientX; ly = t0.clientY; lt = now();
+        vx = vy = 0; lt = now(); resetSamples(); pushSample(t0.clientX, t0.clientY, lt);
         pinch = null;
       }
     }, { capture: true, passive: false });
@@ -2949,12 +2976,8 @@
         var tx = m.x - pinch.px * nz, ty = m.y - pinch.py * nz;
         schedule(function () { applyTransform(nz, tx, ty); });
       } else if (pan && e.touches.length === 1) {
-        var t = e.touches[0], tnow = now(), dt = tnow - lt;
-        if (dt > 0) {                                  // running velocity (lightly smoothed)
-          vx = 0.7 * ((t.clientX - lx) / dt) + 0.3 * vx;
-          vy = 0.7 * ((t.clientY - ly) / dt) + 0.3 * vy;
-          lx = t.clientX; ly = t.clientY; lt = tnow;
-        }
+        var t = e.touches[0], tnow = now();
+        lt = tnow; pushSample(t.clientX, t.clientY, tnow);
         var px = pan.cx0 + (t.clientX - pan.mx), py = pan.cy0 + (t.clientY - pan.my);
         schedule(function () { applyTransform(editor.zoom, px, py); });
       }
@@ -2968,7 +2991,7 @@
       } else if (e.touches.length === 1) {
         var t1 = e.touches[0];
         pan = { mx: t1.clientX, my: t1.clientY, cx0: editor.canvas_x, cy0: editor.canvas_y };
-        vx = vy = 0; lx = t1.clientX; ly = t1.clientY; lt = now();
+        vx = vy = 0; lt = now(); resetSamples(); pushSample(t1.clientX, t1.clientY, lt);
         pinch = null;
       }
     }, { capture: true, passive: false });
