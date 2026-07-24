@@ -1014,6 +1014,10 @@
         <button class="lm-item" data-cmd="ungroup" id="lm-ungroup">Ungroup<span class="kbd">Ctrl+Shift+G</span></button>
         <button class="lm-item" data-cmd="lock" id="lm-lock">Lock in place</button>
         <button class="lm-item" data-cmd="unlock" id="lm-unlock">Unlock</button>
+        <div class="lm-sep" id="lm-sep3"></div>
+        <button class="lm-item" data-cmd="duplicate" id="lm-duplicate">Duplicate<span class="kbd">Ctrl+D</span></button>
+        <button class="lm-item" data-cmd="copy" id="lm-copy">Copy<span class="kbd">Ctrl+C</span></button>
+        <button class="lm-item" data-cmd="paste" id="lm-paste">Paste<span class="kbd">Ctrl+V</span></button>
       </div>
       <div id="search-panel">
         <div class="sp-search">
@@ -1681,6 +1685,9 @@
     if (cmd === "ungroup") return ungroupSelection();
     if (cmd === "lock") return setSelectionLocked(true);
     if (cmd === "unlock") return setSelectionLocked(false);
+    if (cmd === "copy") return copySelection();
+    if (cmd === "paste") return pasteClipboard();
+    if (cmd === "duplicate") return duplicateSelection();
     var ids = selected.size ? Array.from(selected).filter(function (k) { return meta[k]; }) : [];
     if (!ids.length) return;
     pushUndo();
@@ -1702,12 +1709,90 @@
     setDisp("lm-lock", !anyLocked);
     setDisp("lm-unlock", anyLocked);
     var sep = document.getElementById("lm-sep2"); if (sep) sep.style.display = "";
+    // copy / duplicate need a non-sensor selection; paste needs something on the clipboard
+    var eligible = ids.some(function (k) { return meta[k] && meta[k].kind !== "sensor"; });
+    setDisp("lm-duplicate", eligible);
+    setDisp("lm-copy", eligible);
+    setDisp("lm-paste", _clip.length > 0);
+    setDisp("lm-sep3", eligible || _clip.length > 0);
     m.style.display = "block";
     var w = m.offsetWidth || 180, h = m.offsetHeight || 160;
     m.style.left = Math.min(x, window.innerWidth - w - 8) + "px";
     m.style.top = Math.min(y, window.innerHeight - h - 8) + "px";
   }
   function hideLayerMenu() { var m = document.getElementById("layer-menu"); if (m) m.style.display = "none"; }
+
+  // ---------------- copy / paste / duplicate ----------------
+  // Works on boxes, frames, text notes and icons (not sensors — those are one-per-monitor).
+  var _clip = [], _pasteN = 0;
+  function _eligibleSel() {
+    return Array.from(selected).filter(function (id) { return meta[id] && meta[id].kind !== "sensor"; });
+  }
+  function _snapClip(ids) {
+    var m = nodeMap();
+    return ids.map(function (id) {
+      var nd = m[id] || {}, info = meta[id];
+      return {
+        kind: info.kind, icon: info.icon || "", color: info.color || "",
+        title: info.title || "", html: info.html || "",
+        width: info.width || 0, height: info.height || 0,
+        groupId: info.groupId || "", x: nd.pos_x || 0, y: nd.pos_y || 0
+      };
+    });
+  }
+  function _spawnFromClip(c, dx, dy) {
+    var x = c.x + dx, y = c.y + dy, id = null;
+    if (c.kind === "icon") id = addIconNode(x, y, c.icon, c.color);
+    else if (c.kind === "box") { id = addBoxNode(x, y, c.title || "Box"); if (id != null && c.icon) setIcon(id, c.icon); }
+    else if (c.kind === "frame") id = addFrameNode(x, y, c.width || 220, c.height || 140, c.title || "Group");
+    else if (c.kind === "text") id = addTextNode(x, y, c.html || "");
+    if (id == null) return null;
+    if (c.width && (c.kind === "icon" || c.kind === "box")) {   // restore a resized icon/box footprint
+      meta[id].width = c.width;
+      var el = document.getElementById("node-" + id), card = el && el.querySelector(".card");
+      if (card) { card.style.width = c.width + "px"; if (c.kind === "icon") { meta[id].height = c.width; card.style.height = c.width + "px"; } }
+    }
+    return id;
+  }
+  function _pasteList(list, dx, dy) {
+    if (!list.length) return [];
+    pushUndo();
+    var remap = {}, newIds = [];
+    list.forEach(function (c) {
+      var id = _spawnFromClip(c, dx, dy);
+      if (id == null) return;
+      if (c.groupId) (remap[c.groupId] = remap[c.groupId] || []).push(id);
+      newIds.push(id);
+    });
+    // re-group pasted members that were grouped together in the source
+    Object.keys(remap).forEach(function (old) {
+      var members = remap[old]; if (members.length < 2) return;
+      var gid = "grp-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e5).toString(36);
+      members.forEach(function (id) { meta[id].groupId = gid; var el = document.getElementById("node-" + id); if (el) el.classList.add("grouped"); });
+    });
+    if (newIds.length) { selectNodes(newIds, false); markDirty(); }
+    return newIds;
+  }
+  function copySelection() {
+    var ids = _eligibleSel();
+    if (!ids.length) { if (selected.size) toast("Sensors can't be duplicated — copy a box, frame, text or icon"); return; }
+    _clip = _snapClip(ids);
+    _pasteN = 0;
+    toast(ids.length + (ids.length > 1 ? " items copied" : " item copied"));
+  }
+  function pasteClipboard() {
+    if (!_clip.length) return;
+    _pasteN++;
+    var off = 26 * _pasteN;
+    var ids = _pasteList(_clip, off, off);
+    if (ids.length) toast(ids.length > 1 ? ids.length + " items pasted" : "Pasted");
+  }
+  function duplicateSelection() {
+    var ids = _eligibleSel();
+    if (!ids.length) { if (selected.size) toast("Sensors can't be duplicated"); return; }
+    var newIds = _pasteList(_snapClip(ids), 26, 26);
+    if (newIds.length) toast(newIds.length > 1 ? newIds.length + " items duplicated" : "Duplicated");
+  }
 
   function decorate(id) {
     var el = document.getElementById("node-" + id);
@@ -3513,6 +3598,12 @@
           dels.forEach(function (id) { try { editor.removeNodeId("node-" + id); } catch (_) {} });
           clearSelection();
         }
+      } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
+        ev.preventDefault(); copySelection();
+      } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v") {
+        ev.preventDefault(); pasteClipboard();
+      } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "d") {
+        ev.preventDefault(); duplicateSelection();
       } else if ((ev.ctrlKey || ev.metaKey) && ev.key === "]") {
         ev.preventDefault(); layerCmd(ev.shiftKey ? "front" : "forward");
       } else if ((ev.ctrlKey || ev.metaKey) && ev.key === "[") {

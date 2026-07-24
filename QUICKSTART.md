@@ -94,6 +94,8 @@ board). **The page opens in View** — click **Edit** when you want to change th
 - **Nudge** a selection with the **arrow keys** (1px; hold `Shift` for 10px).
 - **Group** a selection so it moves as one (`Ctrl/Cmd+G`), or right-click → **Lock in place** so it can't
   be moved, resized, or deleted until you unlock it.
+- **Copy/paste** any box, frame, text note or icon to reuse it: `Ctrl/Cmd+C` then `Ctrl/Cmd+V`, or
+  `Ctrl/Cmd+D` to duplicate it in place (also on the right-click menu) — its style and size come along.
 - **Layer order:** right-click a node → *Bring to Front / Send to Back*, or `Ctrl+]` / `Ctrl+[`.
 
 **Delete a wire:** click the line — a red **✕ Delete link** button pops up. Click it, press `Delete`, or

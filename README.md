@@ -102,6 +102,8 @@ page opens in **View** by default — you load it to check status, not to edit.
 - **Nudge** a selection 1px with the arrow keys (10px with `Shift`).
 - **Group** a selection so it moves as one (`Ctrl/Cmd+G`); **Lock** it in place from the right-click menu
   (locked items can't be moved, resized, or deleted until unlocked).
+- **Copy / paste / duplicate** boxes, frames, text notes and icons — `Ctrl/Cmd+C` then `Ctrl/Cmd+V`, or
+  `Ctrl/Cmd+D` to duplicate in place (also on the right-click menu). Styling, size and grouping carry over.
 - **Layer order:** right-click → *Bring to Front / Send to Back*, or `Ctrl+]` / `Ctrl+[`.
 - **Wire things:** drag from a node's **right-side dot** (output) to another node's **left-side dot** (input).
 - **Delete a wire:** click it and hit the red **✕ Delete link** button, press `Delete`, or double-click it.
@@ -121,6 +123,8 @@ Save button. `Ctrl/Cmd+S` or the button save instantly.
 | Undo / Redo | `Ctrl/Cmd + Z` / `Ctrl/Cmd + Shift + Z` |
 | Nudge selection | Arrow keys (`Shift` = 10px) |
 | Group / Ungroup | `Ctrl/Cmd + G` / `Ctrl/Cmd + Shift + G` |
+| Copy / Paste | `Ctrl/Cmd + C` / `Ctrl/Cmd + V` |
+| Duplicate in place | `Ctrl/Cmd + D` |
 | Delete selected node / wire | `Delete` (or `Cmd + Backspace`) |
 | Search sensors & jump to one | `/` |
 | Layer forward / backward | `Ctrl + ]` / `Ctrl + [` |
