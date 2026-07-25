@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pull the latest code from GitHub and rebuild the running container.
-# Run this on the server (the Bosgame) inside the project folder:  ./update.sh
+# Run this on the server inside the project folder:  ./update.sh
 set -e
 cd "$(dirname "$0")"
 
