@@ -99,6 +99,13 @@
     border-bottom: 1px solid var(--border);
     backdrop-filter: blur(8px);
     z-index: 5;
+    /* A grid item defaults to min-width:auto, i.e. it refuses to shrink below its content. The
+       header is a row of #app's grid, so when Edit mode added enough buttons to exceed the
+       window the header pushed the WHOLE grid wider than the viewport (measured: 1592px in a
+       1440px window). #body inherited that width, its 1fr canvas column grew with it, and the
+       zoom bar — anchored to the canvas's right edge — got carried 136px off the screen.
+       min-width:0 lets the header shrink instead of shoving everything sideways. */
+    min-width: 0;
   }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .3px; }
   .brand .logo {
@@ -122,33 +129,63 @@
   .pill.offline .dot { background: var(--down); box-shadow: 0 0 10px var(--down); }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-  .spacer { flex: 1; }
+  .spacer { flex: 1; min-width: 0; }
   .counts { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+  /* Nothing in the header shrinks or wraps. Squeezing a flex item just clips the wordmark
+     mid-letter and folds the status pill onto two lines; when room runs out we drop whole
+     elements at the breakpoints further down instead, worst-first. */
+  .brand, .counts, .legend, .pill { flex: none; white-space: nowrap; }
   .counts b { color: var(--text); }
   .counts .up b { color: var(--up); }
   .counts .down b { color: var(--down); }
 
   button.btn {
     display: inline-flex; align-items: center; gap: 7px;
-    height: 34px; padding: 0 13px; border-radius: 9px; cursor: pointer;
+    height: 38px; padding: 0 14px; border-radius: 10px; cursor: pointer;
     border: 1px solid var(--border-2); background: var(--panel);
     color: var(--text); font-size: 13px; font-weight: 600;
-    transition: .15s;
+    transition: .15s; flex: none; white-space: nowrap;
   }
   button.btn:hover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,.12); }
   button.btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
   button.btn.primary:hover { filter: brightness(1.08); }
-  button.btn svg { width: 16px; height: 16px; }
+  button.btn svg { width: 17px; height: 17px; flex: none; }
 
-  .icon-btn { padding: 0; width: 34px; justify-content: center; }
-  .icon-btn svg { width: 17px; height: 17px; }
+  .icon-btn { padding: 0; width: 38px; height: 38px; justify-content: center; }
+  .icon-btn svg { width: 21px; height: 21px; }
   .icon-btn:disabled { opacity: .38; cursor: default; border-color: var(--border-2); box-shadow: none; }
-  .hist { display: inline-flex; gap: 5px; }
+  .hist { display: inline-flex; gap: 5px; flex: none; }
+
+  /* the three always-present controls (search / problems / settings) as one segmented group —
+     a single outer frame reads as a unit and is much easier to find than three loose squares */
+  .tool-cluster {
+    display: inline-flex; align-items: center; gap: 2px; flex: none;
+    padding: 3px; border-radius: 13px;
+    border: 1px solid var(--border-2); background: var(--panel-2);
+  }
+  .tool-cluster .icon-btn {
+    border-color: transparent; background: transparent;
+    width: 40px; height: 38px; border-radius: 10px; color: var(--muted);
+  }
+  .tool-cluster .icon-btn:hover {
+    background: var(--panel); color: var(--text);
+    border-color: var(--border-2); box-shadow: none;
+  }
+  .tool-cluster .icon-btn.active { background: var(--panel); }
+  /* live count of what's down, so the problems filter advertises itself when it matters */
+  #btn-problems { position: relative; overflow: visible; }
+  .btn-badge {
+    position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px;
+    padding: 0 4px; border-radius: 9px; background: var(--down); color: #fff;
+    font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center;
+    border: 2px solid var(--panel-2); pointer-events: none;
+  }
+  .btn-badge[hidden] { display: none; }
 
   /* settings / theme menu */
   .settings-wrap { position: relative; }
   .settings-menu {
-    position: absolute; top: 42px; right: 0; z-index: 60; display: none;
+    position: absolute; top: calc(100% + 12px); right: 0; z-index: 60; display: none;
     width: min(260px, 88vw); padding: 12px; border-radius: 14px;
     /* never taller than the screen — scroll instead, so every toggle is reachable
        (this is what was cutting off the bottom switches in phone landscape) */
@@ -371,6 +408,47 @@
   body.view-mode .hist { display: none; }
   body.mobile #body { grid-template-columns: 0 1fr; }   /* no palette */
   body.mobile aside { transform: translateX(-100%); pointer-events: none; }
+  /* --- Edit mode packs a lot more into the header than View mode does. Rather than let it
+     overflow (which used to drag the canvas column off-screen), shed the least useful things
+     first as the window narrows: the legend duplicates the numeric counts, the tool labels
+     duplicate their icons, and so on. The controls themselves never move. --- */
+  /* Edit mode carries far more chrome than View, so it starts shedding first. NOTE the
+     `header .legend` selector rather than a bare `.legend` — the base `.legend{display:flex}`
+     rule lives further down the file, so a same-specificity rule up here would lose to it. */
+  @media (max-width: 1600px) {
+    /* the legend just restates the numeric Up/Down/Total counts, and "Saved" is already shown
+       by the dot next to it — these cost nothing to lose */
+    body:not(.view-mode) .legend { display: none; }
+    body:not(.view-mode) #save-status { display: none; }
+    body:not(.view-mode) header { gap: 12px; }
+  }
+  @media (max-width: 1360px) {
+    /* every tool button keeps its icon and its tooltip, it just loses the word */
+    body:not(.view-mode) .btn .lbl { display: none; }
+    body:not(.view-mode) .btn:has(.lbl) { width: 38px; padding: 0; justify-content: center; }
+  }
+  @media (max-width: 1120px) {
+    body:not(.view-mode) .counts { display: none; }
+    body:not(.view-mode) .brand small { display: none; }
+  }
+  /* below here it applies in BOTH modes — View mode is lighter, so it holds out longer */
+  @media (max-width: 1120px) {
+    header .legend { display: none; }
+    header { gap: 12px; }
+  }
+  @media (max-width: 1000px) {
+    .counts { display: none; }
+    .brand small { display: none; }
+    body:not(.view-mode) .brand > *:not(.logo) { display: none; }
+    body:not(.view-mode) #conn-text { display: none; }
+    body:not(.view-mode) #conn { padding: 6px; gap: 0; }
+  }
+  @media (max-width: 920px) {
+    .brand > *:not(.logo) { display: none; }   /* keep the glowing logo, drop the wordmark */
+    #conn-text { display: none; }
+    #conn { padding: 6px; gap: 0; }
+  }
+
   @media (max-width: 860px) {
     #app { grid-template-rows: calc(50px + env(safe-area-inset-top, 0px)) 1fr; }
     header { height: calc(50px + env(safe-area-inset-top, 0px)); gap: 9px; padding: env(safe-area-inset-top, 0px) 11px 0; }
@@ -757,16 +835,18 @@
 
   /* zoom controls */
   .zoom-controls {
-    position: absolute; right: 16px; bottom: 16px; z-index: 6;
+    /* fixed, not absolute: pinned to the WINDOW rather than to the canvas column, so no amount
+       of layout width elsewhere can ever carry it off the edge of the screen again */
+    position: fixed; right: 16px; bottom: 16px; z-index: 6;
     display: flex; align-items: center; gap: 6px;
     background: var(--zoombar); border: 1px solid var(--border-2);
     border-radius: 11px; padding: 6px; backdrop-filter: blur(8px);
     box-shadow: var(--shadow);
   }
   .zoom-controls button {
-    width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+    width: 37px; height: 37px; border-radius: 9px; cursor: pointer;
     border: 1px solid var(--border-2); background: var(--panel);
-    color: var(--text); font-size: 18px; line-height: 1; font-weight: 600;
+    color: var(--text); font-size: 19px; line-height: 1; font-weight: 600;
     display: grid; place-items: center; transition: .12s;
   }
   .zoom-controls button:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,.12); }
@@ -970,20 +1050,23 @@
       <button class="btn icon-btn" id="btn-undo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
       <button class="btn icon-btn" id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h1"/></svg></button>
     </div>
-    <button class="btn" id="btn-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>Add Box</button>
-    <button class="btn" id="btn-frame"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>Frame</button>
-    <button class="btn" id="btn-text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 6V4M20 6V4M12 6v14M9 20h6"/></svg>Text</button>
-    <button class="btn" id="btn-icon" title="Add an icon graphic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-4.5-4.5L7 20"/></svg>Icon</button>
+    <button class="btn" id="btn-add" title="Add a box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg><span class="lbl">Add Box</span></button>
+    <button class="btn" id="btn-frame" title="Wrap the selection in a frame"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"><rect x="3" y="3" width="18" height="18" rx="3"/></svg><span class="lbl">Frame</span></button>
+    <button class="btn" id="btn-text" title="Add a text note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 6V4M20 6V4M12 6v14M9 20h6"/></svg><span class="lbl">Text</span></button>
+    <button class="btn" id="btn-icon" title="Add an icon graphic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-4.5-4.5L7 20"/></svg><span class="lbl">Icon</span></button>
     <span id="save-status" class="save-status saved" title="Changes save automatically">Saved</span>
-    <button class="btn primary" id="btn-save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7"/></svg>Save</button>
+    <button class="btn primary" id="btn-save" title="Save now (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7"/></svg><span class="lbl">Save</span></button>
     <div class="mode">
       <button id="mode-edit" class="active">✎ Edit</button>
       <button id="mode-view">👁 View</button>
     </div>
-    <button class="btn icon-btn" id="btn-search" title="Search (press /)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
-    <button class="btn icon-btn" id="btn-problems" title="Show problems only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></button>
+    <!-- search / problems / settings live in one segmented cluster so they read as a group and
+         are easy to hit; they are the only always-present controls in both modes -->
+    <div class="tool-cluster">
+    <button class="btn icon-btn" id="btn-search" title="Search sensors, boxes and groups (press /)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.7-4.7"/></svg></button>
+    <button class="btn icon-btn" id="btn-problems" title="Show only sensors that are down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.2"/><path d="M12 17.3h.01"/></svg><span class="btn-badge" id="prob-badge" hidden>0</span></button>
     <div class="settings-wrap">
-      <button class="btn icon-btn" id="btn-settings" title="Themes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="btn icon-btn" id="btn-settings" title="Settings — theme, display, alerts, servers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h6M14 7h6M4 17h10M18 17h2"/><circle cx="12" cy="7" r="2.3"/><circle cx="16" cy="17" r="2.3"/></svg></button>
       <div class="settings-menu" id="settings-menu">
         <div class="sm-title">Theme</div>
         <div class="theme-grid" id="theme-grid"></div>
@@ -1015,6 +1098,7 @@
         </div>
       </div>
     </div>
+    </div><!-- /.tool-cluster -->
   </header>
 
   <div id="body">
@@ -2167,6 +2251,11 @@
     document.getElementById("c-up").textContent = up;
     document.getElementById("c-down").textContent = down;
     document.getElementById("c-total").textContent = mons.length;
+    // badge the problems button with the live down count — it's the one control whose value
+    // changes moment to moment, and the counts row that used to carry this is the first thing
+    // dropped when the header gets tight
+    var pb = document.getElementById("prob-badge");
+    if (pb) { pb.textContent = down > 99 ? "99+" : down; pb.hidden = down === 0; }
 
     if (snap.mode === "demo") setConn("demo", "DEMO DATA");
     else if (snap.connected) setConn("live", "LIVE · KUMA");
