@@ -436,17 +436,21 @@
     header .legend { display: none; }
     header { gap: 12px; }
   }
+  /* `body:not(.mobile)` throughout: a phone already has its own, better-tuned rules further
+     down (counts collapse to coloured dots rather than vanishing). Without this exclusion
+     these width rules would fire on a phone too and silently win, taking the Up/Down counts
+     off the header entirely. */
   @media (max-width: 1000px) {
-    .counts { display: none; }
-    .brand small { display: none; }
-    body:not(.view-mode) .brand > *:not(.logo) { display: none; }
-    body:not(.view-mode) #conn-text { display: none; }
-    body:not(.view-mode) #conn { padding: 6px; gap: 0; }
+    body:not(.mobile) .counts { display: none; }
+    body:not(.mobile) .brand small { display: none; }
+    body:not(.view-mode):not(.mobile) .brand > *:not(.logo) { display: none; }
+    body:not(.view-mode):not(.mobile) #conn-text { display: none; }
+    body:not(.view-mode):not(.mobile) #conn { padding: 6px; gap: 0; }
   }
   @media (max-width: 920px) {
-    .brand > *:not(.logo) { display: none; }   /* keep the glowing logo, drop the wordmark */
-    #conn-text { display: none; }
-    #conn { padding: 6px; gap: 0; }
+    body:not(.mobile) .brand > *:not(.logo) { display: none; }  /* keep the logo, drop the wordmark */
+    body:not(.mobile) #conn-text { display: none; }
+    body:not(.mobile) #conn { padding: 6px; gap: 0; }
   }
 
   @media (max-width: 860px) {
@@ -458,9 +462,10 @@
     .legend { display: none !important; }   /* !important: base .legend{display:flex} is defined later in the file */
     .counts { font-size: 12px; gap: 10px; margin-left: auto; }
     .pill { padding: 4px 9px; font-size: 11px; }
-    .zoom-controls { right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
-    .zoom-controls button { width: 44px; height: 44px; font-size: 21px; }  /* bigger touch targets */
-    .zoom-controls #z-level { display: none; }   /* pinch shows zoom; save the space */
+    /* NOTE: the zoom-bar overrides that used to live here were dead code — this block sits
+       ABOVE the base `.zoom-controls` rules in the file, so at equal specificity the base
+       always won and mobile never actually got its bigger buttons. They now live in the
+       touch-target block at the very end of this stylesheet, where they take effect. */
     .ip-panel { width: 94vw; }
   }
   /* --- phone: guarantee the header fits on-screen so search / problems / settings
@@ -479,7 +484,7 @@
   body.mobile .counts > span:last-child { display: none; }   /* drop 'Total', keep Up / Down */
   body.mobile #btn-search, body.mobile #btn-problems, body.mobile .settings-wrap { flex: none; }
   body.mobile .legend { display: none !important; }
-  body.mobile .settings-menu { top: 46px; }
+  body.mobile .settings-menu { top: calc(100% + 10px); }
   /* very narrow phones (portrait): collapse the Up/Down counts to colored dots + numbers
      and drop the status pill so the right-side controls never get pushed off-screen */
   @media (max-width: 560px) {
@@ -491,6 +496,7 @@
     body.mobile .counts > span.down::before { background: var(--down); }
     body.mobile .counts b { font-size: 12px; }
   }
+
   .card.sensor { display: flex; align-items: center; gap: 10px; padding: 11px 22px; }
 
   /* per-sensor icon chip */
@@ -1024,6 +1030,38 @@
 
   #pw-modal { position: fixed; inset: 0; z-index: 90; display: none; background: var(--overlay); backdrop-filter: blur(3px); align-items: center; justify-content: center; }
   #pw-modal.open { display: flex; }
+
+  /* ======================================================================================
+     TOUCH TARGETS — must stay LAST in this stylesheet.
+     38px is a comfortable button under a mouse and a cramped one under a thumb; Apple asks
+     for 44pt minimum, Google for 48dp. There WAS an attempt at this (a 44px zoom-button rule
+     inside the max-width:860px block) but it sat above the base `.zoom-controls` rules, so at
+     equal specificity the base won and it never did anything — on a phone every control stayed
+     mouse-sized. Everything below therefore lives at the very end of the file, after every
+     rule it needs to beat. Add new overrides here, not further up.
+     Keyed on `pointer: coarse` rather than a width, so tablets and touchscreen laptops get
+     real targets too, and the header row grows to fit them.
+     ====================================================================================== */
+  @media (pointer: coarse) {
+    #app { grid-template-rows: calc(60px + env(safe-area-inset-top, 0px)) 1fr; }
+    header { height: calc(60px + env(safe-area-inset-top, 0px)); }
+    button.btn { height: 44px; border-radius: 12px; }
+    button.btn svg { width: 19px; height: 19px; }
+    .icon-btn { width: 44px; height: 44px; }
+    .icon-btn svg { width: 23px; height: 23px; }
+    .tool-cluster { gap: 3px; padding: 3px; border-radius: 15px; }
+    .tool-cluster .icon-btn { width: 46px; height: 44px; border-radius: 12px; }
+    .btn-badge { top: -2px; right: -2px; min-width: 19px; height: 19px; line-height: 19px; font-size: 11px; }
+    .mode button { min-height: 40px; padding: 0 15px; font-size: 13px; }
+    .zoom-controls { border-radius: 14px; padding: 6px; gap: 6px; }
+    .zoom-controls button { width: 46px; height: 46px; font-size: 22px; border-radius: 11px; }
+    .zoom-controls #z-fit { font-size: 19px; }
+    .zoom-controls #z-level { font-size: 13px; min-width: 50px; }
+  }
+  @media (pointer: coarse) and (max-width: 860px) {
+    .zoom-controls { right: 12px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+    .zoom-controls #z-level { display: none; }   /* pinch already shows zoom; save the width */
+  }
 </style>
 </head>
 <body>
