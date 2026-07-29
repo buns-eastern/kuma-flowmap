@@ -11,6 +11,9 @@ Self-hosted, runs in Docker, works fully offline on your LAN.
 
 - **Live status board** — every sensor's up / down / pending / maintenance state streams in over a
   WebSocket. Wires gently animate, and a link feeding a *down* sensor turns red and stops flowing.
+- **Multiple views, as tabs** — split your kit across as many maps as you like instead of cramming
+  everything onto one page. Each tab has its own name and icon, and carries a live red count of what's
+  down *on that map*, so a tab you aren't looking at can still tell you something broke.
 - **Build it your way** — drag sensors onto a canvas, group them inside **boxes** and **frames**, drop
   in rich-text **notes**, and wire everything together. Edge/center **snapping**, equal-spacing guides,
   **grouping**, **locking**, and arrow-key **nudging** make precise layout easy.
@@ -85,6 +88,19 @@ New sensors you add in Uptime Kuma appear on the map on their own within ~30 sec
 Two modes, top-right of the toolbar: **Edit** (build the map) and **View** (a clean live board). The
 page opens in **View** by default — you load it to check status, not to edit.
 
+**Views (tabs)** — the strip under the toolbar. Each tab is a separate map with its own name and icon,
+so a big site doesn't have to live on one sprawling page.
+
+- **`+`** adds a view and drops you straight into naming it.
+- **`⋯`** on the active tab (or double-click it, or long-press on a touchscreen) opens rename, **Change
+  icon**, **Duplicate view**, reorder, and **Delete view**.
+- The little **red number** on a tab is how many sensors are *down* on that view — it stays live for
+  every tab, including the ones you're not on.
+- A sensor can sit on **more than one view** (a "Core" overview and a "Site B" detail map, say). The
+  palette's "*n* left" counts what isn't on *this* view.
+- **`Alt+1` … `Alt+9`** jumps between views. Tabs work in View mode and in the phone/PWA board too —
+  editing them, like everything else in Edit mode, is desktop-only.
+
 **Node types**
 - **Sensor** — drag one from the left palette onto the canvas. Click its icon to change it; double-click
   its name to rename.
@@ -97,11 +113,15 @@ page opens in **View** by default — you load it to check status, not to edit.
   keeps its aspect ratio); its colour follows the theme by default (light on dark, dark on light) or you
   can set a fixed colour, just like a text note. Double-click to swap the glyph.
 
+**Selection toolbar** — select anything in Edit mode and a small toolbar appears beside it with
+**Duplicate**, **Lock**, **Group**, **Arrange** and a red **Delete**. It's the quickest way to remove
+something; the right-click menu and the `Delete` key still do the same jobs.
+
 **Arrange precisely**
 - Drag to move; edge/center **alignment guides** and **equal-spacing guides** appear as you go.
 - **Nudge** a selection 1px with the arrow keys (10px with `Shift`).
-- **Group** a selection so it moves as one (`Ctrl/Cmd+G`); **Lock** it in place from the right-click menu
-  (locked items can't be moved, resized, or deleted until unlocked).
+- **Group** a selection so it moves as one (`Ctrl/Cmd+G`); **Lock** it in place from the selection
+  toolbar or the right-click menu (locked items can't be moved, resized, or deleted until unlocked).
 - **Copy / paste / duplicate** boxes, frames, text notes and icons — `Ctrl/Cmd+C` then `Ctrl/Cmd+V`, or
   `Ctrl/Cmd+D` to duplicate in place (also on the right-click menu). Styling, size and grouping carry over.
 - **Layer order:** right-click → *Bring to Front / Send to Back*, or `Ctrl+]` / `Ctrl+[`.
@@ -127,6 +147,7 @@ Save button. `Ctrl/Cmd+S` or the button save instantly.
 | Duplicate in place | `Ctrl/Cmd + D` |
 | Delete selected node / wire | `Delete` (or `Cmd + Backspace`) |
 | Search sensors & jump to one | `/` |
+| Switch to view 1–9 | `Alt + 1` … `Alt + 9` |
 | Layer forward / backward | `Ctrl + ]` / `Ctrl + [` |
 | Layer to front / to back | `Ctrl + Shift + ]` / `Ctrl + Shift + [` |
 | Pan | drag the background, or hold `Space` and drag |

@@ -14,6 +14,18 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="icon" type="image/png" href="/static/icon-192.png" />
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
+<!-- Real viewport height. In an installed PWA (iOS especially) 100% / 100dvh can resolve short
+     of the window we were actually given, leaving a dead strip of blank space under the map.
+     window.innerHeight is the one measurement that's right in every shell. Deliberately NOT
+     visualViewport.height — that shrinks when the on-screen keyboard opens, which would
+     collapse the whole app while you're typing in a node. -->
+<script>(function(){var r=document.documentElement,t=0;
+function set(){r.style.setProperty('--app-h',window.innerHeight+'px');}
+function later(){clearTimeout(t);t=setTimeout(set,120);}   /* orientation change settles late */
+set();
+addEventListener('resize',set);addEventListener('orientationchange',later);
+addEventListener('pageshow',set);
+if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</script>
 <script>try{var d=document.documentElement,t=localStorage.getItem('kfm-theme');if(t)d.setAttribute('data-theme',t);if(localStorage.getItem('kfm-show-sub')==='0')d.classList.add('hide-sub');if(localStorage.getItem('kfm-show-badge')==='0')d.classList.add('hide-badge');if(localStorage.getItem('kfm-show-source')!=='1')d.classList.add('hide-source');}catch(e){}</script>
 <link rel="stylesheet" href="/static/vendor/drawflow.min.css" />
 <style>
@@ -79,8 +91,18 @@
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; height: 100%; height: 100dvh;   /* dvh keeps content above the mobile browser toolbar */
+    margin: 0;
+    /* Three declarations, deliberately: 100% for old browsers, 100dvh where it's supported, and
+       --app-h (set from JS off window.innerHeight, see setAppHeight) winning whenever it's
+       available. In standalone/PWA mode both 100% and 100dvh can resolve SHORT of the window
+       the OS actually handed us, which left a dead strip of empty space along the bottom of the
+       map. Measuring the window directly is the only thing that's reliable in every shell. */
+    height: 100%; height: 100dvh; height: var(--app-h, 100dvh);
+    overscroll-behavior: none;   /* no pull-to-refresh / rubber-banding inside the installed app */
     background: radial-gradient(1200px 700px at 78% -10%, var(--glow) 0%, var(--bg) 55%) fixed;
+    /* explicit colour layer UNDER the gradient: whatever the shell exposes beyond our box is
+       then the theme's own background rather than the browser's default white canvas */
+    background-color: var(--bg);
     transition: background .25s;
     color: var(--text);
     font-family: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
@@ -88,8 +110,107 @@
     -webkit-font-smoothing: antialiased;
     -webkit-text-size-adjust: 100%; text-size-adjust: 100%;   /* stop iOS from inflating node text */
   }
-  /* first row grows by the notch/status-bar inset so the header clears it when installed full-screen */
-  #app { display: grid; grid-template-rows: calc(56px + env(safe-area-inset-top, 0px)) 1fr; height: 100%; }
+  /* first row grows by the notch/status-bar inset so the header clears it when installed
+     full-screen; the middle `auto` row is the view-tab strip, which collapses to nothing
+     whenever it's hidden (see #view-tabs) */
+  /* Pinned to the viewport rather than merely 100%-tall. In an installed PWA a normally-flowed
+     shell can end up shorter than the window (and can be nudged by rubber-banding), which is
+     what left an empty band under the map; anchoring the shell to the viewport's top-left and
+     giving it the measured window height removes both failure modes. */
+  #app {
+    display: grid; grid-template-rows: calc(56px + env(safe-area-inset-top, 0px)) auto 1fr;
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 100%; height: var(--app-h, 100dvh);
+  }
+
+  /* ---------- view tabs (multiple maps in one app) ---------- */
+  #view-tabs {
+    display: none; align-items: center; gap: 6px;
+    padding: 6px max(10px, env(safe-area-inset-left)) 6px max(10px, env(safe-area-inset-right));
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto; overflow-y: hidden; min-width: 0;
+    scrollbar-width: none; -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;   /* momentum scrolling for a long tab strip on a phone */
+    overscroll-behavior-x: contain;      /* swiping the strip must never drag the whole PWA */
+    z-index: 6;
+  }
+  #view-tabs::-webkit-scrollbar { display: none; }
+  body.tabs-on #view-tabs { display: flex; }
+  /* the tab itself is drawn as a little BOX: icon chip on the left, name, live problem count */
+  .vtab {
+    display: inline-flex; align-items: center; gap: 7px; flex: none; position: relative;
+    height: 32px; max-width: 190px; padding: 0 11px 0 8px;
+    border-radius: 10px; border: 1px solid var(--border-2);
+    background: linear-gradient(180deg, var(--box-a), var(--box-b));
+    color: var(--muted); font-size: 12.5px; font-weight: 600; font-family: inherit;
+    cursor: pointer; transition: .12s; white-space: nowrap;
+  }
+  .vtab:hover { color: var(--text); border-color: var(--border-2); transform: translateY(-1px); }
+  .vtab.active {
+    color: var(--text); border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 5px 16px rgba(0,0,0,.32);
+  }
+  .vtab .vt-ic { width: 19px; height: 19px; flex: none; display: flex; align-items: center; justify-content: center; color: var(--accent); }
+  .vtab .vt-ic svg { width: 15px; height: 15px; fill: currentColor; display: block; }
+  .vtab .vt-nm { overflow: hidden; text-overflow: ellipsis; }
+  /* live count of what's DOWN on that view — the reason to glance at a tab you're not on */
+  .vtab .vt-down {
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+    background: var(--down); color: #fff; font-size: 9.5px; font-weight: 800; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums; flex: none;
+  }
+  .vtab .vt-more {
+    width: 18px; height: 18px; margin-right: -4px; flex: none; border: 0; padding: 0;
+    border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer;
+    display: none; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+  }
+  .vtab.active .vt-more { display: flex; }
+  .vtab .vt-more:hover { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+  #vt-add {
+    flex: none; width: 30px; height: 30px; border-radius: 9px; cursor: pointer;
+    border: 1px dashed var(--border-2); background: transparent; color: var(--muted);
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+  }
+  #vt-add:hover { color: var(--accent); border-color: var(--accent); }
+  #vt-add svg { width: 15px; height: 15px; display: block; }
+  /* View mode is read-only: tabs still switch, but nothing about them can be changed */
+  body.view-mode #vt-add, body.view-mode .vt-more { display: none !important; }
+
+  /* rename / icon / reorder / delete popover for a view */
+  #view-menu {
+    position: fixed; display: none; z-index: 95; width: 232px; padding: 8px;
+    border-radius: 13px; background: linear-gradient(180deg, var(--modal-a), var(--modal-b));
+    border: 1px solid var(--border-2); box-shadow: 0 20px 46px rgba(0,0,0,.5);
+  }
+  #view-menu input {
+    width: 100%; height: 34px; padding: 0 10px; margin-bottom: 6px;
+    border-radius: 9px; border: 1px solid var(--border-2); background: var(--panel-2);
+    color: var(--text); font: inherit; font-size: 13px; outline: none;
+  }
+  #view-menu input:focus { border-color: var(--accent); }
+  #view-menu .vm-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 9px; border: 0; border-radius: 9px; background: transparent;
+    color: var(--text); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+  }
+  #view-menu .vm-item svg { width: 15px; height: 15px; flex: none; }
+  #view-menu .vm-item:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+  #view-menu .vm-item.danger { color: var(--down); }
+  #view-menu .vm-item.danger:hover { background: color-mix(in srgb, var(--down) 16%, transparent); }
+  #view-menu .vm-item[disabled] { opacity: .35; cursor: default; }
+  #view-menu .vm-item[disabled]:hover { background: transparent; }
+  #view-menu .vm-sep { height: 1px; margin: 5px 4px; background: var(--border-2); }
+  #view-menu .vm-row { display: flex; gap: 6px; }
+  #view-menu .vm-row .vm-item { justify-content: center; padding: 8px 0; border: 1px solid var(--border-2); }
+  @media (pointer: coarse) {
+    .vtab { height: 40px; font-size: 13.5px; padding: 0 13px 0 10px; border-radius: 12px; }
+    .vtab .vt-ic { width: 22px; height: 22px; }
+    .vtab .vt-ic svg { width: 17px; height: 17px; }
+    #vt-add { width: 40px; height: 40px; }
+    #view-tabs { gap: 8px; padding-top: 7px; padding-bottom: 7px; }
+  }
 
   /* ---------- Top bar ---------- */
   header {
@@ -98,7 +219,13 @@
     background: linear-gradient(180deg, var(--head-a), var(--head-b));
     border-bottom: 1px solid var(--border);
     backdrop-filter: blur(8px);
-    z-index: 5;
+    /* The header creates a stacking context, so everything inside it (notably the Settings
+       dropdown, z-index 60) is clamped to THIS value when compared against siblings outside.
+       At z-index 5 the zoom bar (z-index 6, a sibling of #body) painted OVER the open menu on
+       any screen short enough for the two to overlap — very visible on a phone. Sitting the
+       whole header above the canvas layer fixes the menu and every future header popover;
+       modals (60+) and toasts (80) live outside #app and still win. */
+    z-index: 40;
     /* A grid item defaults to min-width:auto, i.e. it refuses to shrink below its content. The
        header is a row of #app's grid, so when Edit mode added enough buttons to exceed the
        window the header pushed the WHOLE grid wider than the viewport (measured: 1592px in a
@@ -174,10 +301,16 @@
   .tool-cluster .icon-btn.active { background: var(--panel); }
   /* live count of what's down, so the problems filter advertises itself when it matters */
   #btn-problems { position: relative; overflow: visible; }
+  /* Centring note: this used to be `line-height: 17px` on a 17px-tall box — but with
+     box-sizing:border-box the 2px ring eats into that height, leaving a 13px content box for a
+     17px line. The digit was pushed ~2px low and looked visibly off in the corner of the icon.
+     Flex centring is independent of the border, the font's metrics and the digit count. */
   .btn-badge {
-    position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px;
+    position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px;
     padding: 0 4px; border-radius: 9px; background: var(--down); color: #fff;
-    font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center;
+    font-size: 10.5px; font-weight: 800; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: 0;
+    display: flex; align-items: center; justify-content: center;
     border: 2px solid var(--panel-2); pointer-events: none;
   }
   .btn-badge[hidden] { display: none; }
@@ -454,7 +587,7 @@
   }
 
   @media (max-width: 860px) {
-    #app { grid-template-rows: calc(50px + env(safe-area-inset-top, 0px)) 1fr; }
+    #app { grid-template-rows: calc(50px + env(safe-area-inset-top, 0px)) auto 1fr; }
     header { height: calc(50px + env(safe-area-inset-top, 0px)); gap: 9px; padding: env(safe-area-inset-top, 0px) 11px 0; }
     .brand small { display: none; }
     .brand { font-size: 13px; letter-spacing: 0; }
@@ -768,6 +901,39 @@
   #icon-bubble .rt-sw { width: 18px; height: 18px; min-width: 18px; padding: 0; border-radius: 5px; border: 1px solid rgba(150,160,190,.4); cursor: pointer; }
   #icon-bubble .rt-sw:hover { transform: scale(1.12); }
   body.view-mode #icon-bubble { display: none !important; }
+
+  /* --- contextual selection toolbar ---------------------------------------------------------
+     Select anything in Edit mode and this appears next to it, the way Figma / Miro / Lucid all
+     do it. Delete used to be reachable only via right-click or the Delete key, which is no
+     discovery path at all for a first-time user and no path AT ALL on a trackpad-only laptop
+     or a touchscreen. Right-click and the Delete key both still work; this is the visible one. */
+  #sel-bar {
+    position: fixed; display: none; align-items: center; gap: 2px; z-index: 92;
+    transform: translate(-50%, -100%);
+    padding: 4px; border-radius: 12px;
+    background: linear-gradient(180deg, var(--modal-a), var(--modal-b));
+    border: 1px solid var(--border-2); box-shadow: 0 12px 30px rgba(0,0,0,.55);
+    white-space: nowrap; user-select: none;
+  }
+  #sel-bar.below { transform: translate(-50%, 0); }
+  #sel-bar button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    height: 30px; min-width: 30px; padding: 0 7px;
+    border: 0; border-radius: 8px; background: transparent; color: var(--muted);
+    cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; transition: .12s;
+  }
+  #sel-bar button svg { width: 16px; height: 16px; display: block; }
+  #sel-bar button:hover { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+  #sel-bar button.danger:hover { background: color-mix(in srgb, var(--down) 22%, transparent); color: var(--down); }
+  #sel-bar .sb-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--border-2); flex: none; }
+  #sel-bar .sb-count { padding: 0 7px 0 5px; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+  body.view-mode #sel-bar { display: none !important; }
+  /* hidden mid-gesture for the same reason the other bubbles are: it would smear across the pan */
+  body.panning-fx #sel-bar, body.dragging-node #sel-bar { visibility: hidden !important; }
+  @media (pointer: coarse) {
+    #sel-bar button { height: 40px; min-width: 40px; padding: 0 10px; font-size: 13px; }
+    #sel-bar button svg { width: 19px; height: 19px; }
+  }
   body.view-mode .resize-handle, body.mobile .card.textnode .resize-handle { display: none; }
   @keyframes popIn { 0% { transform: scale(.86); opacity: .2; } 60% { transform: scale(1.04); } 100% { transform: scale(1); opacity: 1; } }
   #drawflow .drawflow-node .card.pop-in { animation: popIn .34s cubic-bezier(.2,.8,.3,1.2); }
@@ -790,6 +956,33 @@
   body.view-mode #conn-del, body.mobile #conn-del { display: none !important; }
   body.view-mode .drawflow-delete { display: none !important; }   /* Drawflow's native node/connection delete ✕ is edit-only */
   body.view-mode #save-status { display: none; }                  /* nothing to save in View */
+
+  /* --- Drawflow's native delete ✕ ---------------------------------------------------------
+     Vendor CSS draws it as a black circle whose glyph is the literal text "x" in a monospace
+     font, vertically centred with `line-height: 30px` on a 30px box that also carries a 2px
+     border — so the content box is 26px tall and the glyph rode low and left of centre. A
+     lowercase monospace "x" also has no descender, which drops it further off the optical
+     centre. We hide the text outright (font-size: 0) and paint a real, geometrically centred
+     ✕ as a background SVG, then restyle the chip to match the app instead of the vendor. */
+  .drawflow-delete {
+    width: 26px !important; height: 26px !important;
+    font-size: 0 !important; line-height: 0 !important;
+    background-color: var(--down) !important;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M17.5 6.5 6.5 17.5M6.5 6.5l11 11'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: center center !important;
+    background-size: 13px 13px !important;
+    border: 2px solid var(--panel) !important;
+    box-shadow: 0 3px 10px rgba(0,0,0,.4) !important;
+    transition: transform .12s, filter .12s;
+  }
+  .drawflow-delete:hover { filter: brightness(1.12); transform: scale(1.1); }
+  .parent-node .drawflow-delete { right: -13px !important; top: -13px !important; }
+  .drawflow > .drawflow-delete { margin-left: -13px !important; margin-top: 13px !important; }
+  @media (pointer: coarse) {   /* fingers need a bigger target than a 26px dot */
+    .drawflow-delete { width: 32px !important; height: 32px !important; background-size: 15px 15px !important; }
+    .parent-node .drawflow-delete { right: -16px !important; top: -16px !important; }
+  }
 
   /* right-click layer menu (bring to front / send to back, Lucid-style) */
   #layer-menu {
@@ -1043,7 +1236,7 @@
      real targets too, and the header row grows to fit them.
      ====================================================================================== */
   @media (pointer: coarse) {
-    #app { grid-template-rows: calc(60px + env(safe-area-inset-top, 0px)) 1fr; }
+    #app { grid-template-rows: calc(60px + env(safe-area-inset-top, 0px)) auto 1fr; }
     header { height: calc(60px + env(safe-area-inset-top, 0px)); }
     button.btn { height: 44px; border-radius: 12px; }
     button.btn svg { width: 19px; height: 19px; }
@@ -1051,7 +1244,7 @@
     .icon-btn svg { width: 23px; height: 23px; }
     .tool-cluster { gap: 3px; padding: 3px; border-radius: 15px; }
     .tool-cluster .icon-btn { width: 46px; height: 44px; border-radius: 12px; }
-    .btn-badge { top: -2px; right: -2px; min-width: 19px; height: 19px; line-height: 19px; font-size: 11px; }
+    .btn-badge { top: -2px; right: -2px; min-width: 20px; height: 20px; line-height: 1; font-size: 11px; }
     .mode button { min-height: 40px; padding: 0 15px; font-size: 13px; }
     .zoom-controls { border-radius: 14px; padding: 6px; gap: 6px; }
     .zoom-controls button { width: 46px; height: 46px; font-size: 22px; border-radius: 11px; }
@@ -1139,6 +1332,11 @@
     </div><!-- /.tool-cluster -->
   </header>
 
+  <!-- one strip of tabs, one map per tab. Rendered from JS (renderTabs). -->
+  <div id="view-tabs">
+    <button id="vt-add" title="New view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg></button>
+  </div>
+
   <div id="body">
     <aside>
       <div class="head">
@@ -1182,6 +1380,18 @@
         <button class="rt-sw" data-c="#fbbf24" title="Amber" style="background:#fbbf24"></button>
         <button class="rt-sw" data-c="#fb5a5c" title="Red" style="background:#fb5a5c"></button>
         <button class="rt-sw" data-c="#c084fc" title="Purple" style="background:#c084fc"></button>
+      </div>
+      <!-- contextual toolbar for the current selection (Edit mode only) -->
+      <div id="sel-bar">
+        <span class="sb-count" id="sb-count" hidden></span>
+        <button data-sb="duplicate" id="sb-duplicate" title="Duplicate (Ctrl+D)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+        <button data-sb="lock" id="sb-lock" title="Lock in place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></button>
+        <button data-sb="unlock" id="sb-unlock" title="Unlock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 7.5-1.9"/></svg></button>
+        <button data-sb="group" id="sb-group" title="Group (Ctrl+G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/><path d="M13 7h8M7 13v8" stroke-dasharray="2 2"/></svg></button>
+        <button data-sb="ungroup" id="sb-ungroup" title="Ungroup (Ctrl+Shift+G)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button>
+        <button data-sb="layers" id="sb-layers" title="Arrange / more…"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 14 9 5 9-5"/></svg></button>
+        <span class="sb-sep"></span>
+        <button class="danger" data-sb="delete" id="sb-delete" title="Delete (Del)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>
       </div>
       <div id="layer-menu">
         <button class="lm-item" data-cmd="front">Bring to Front<span class="kbd">Ctrl+Shift+]</span></button>
@@ -1304,6 +1514,20 @@
     </div>
   </div>
 </div>
+<!-- rename / re-icon / reorder / delete for one view -->
+<div id="view-menu">
+  <input id="vm-name" type="text" maxlength="40" placeholder="View name" autocomplete="off" spellcheck="false" />
+  <button class="vm-item" id="vm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-4.5-4.5L7 20"/></svg>Change icon</button>
+  <button class="vm-item" id="vm-duplicate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>Duplicate view</button>
+  <div class="vm-sep"></div>
+  <div class="vm-row">
+    <button class="vm-item" id="vm-left" title="Move left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <button class="vm-item" id="vm-right" title="Move right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>
+  </div>
+  <div class="vm-sep"></div>
+  <button class="vm-item danger" id="vm-delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>Delete view</button>
+</div>
+
 <div id="toast"></div>
 
 <script src="/static/vendor/drawflow.min.js"></script>
@@ -2075,7 +2299,8 @@
     body.addEventListener("click", function (ev) {
       var item = ev.target.closest(".ip-item"); if (!item) return;
       var key = item.getAttribute("data-key");
-      if (pickerTarget === "__new__") placeNewIcon(key);   // toolbar "Icon" -> drop a fresh graphic
+      if (pickerTarget === "__new__") placeNewIcon(key);            // toolbar "Icon" -> drop a fresh graphic
+      else if (_iconPickerView) setViewIcon(_iconPickerView, key);  // picking the glyph for a tab
       else setIcon(pickerTarget, key);
       closeIconPicker();
     });
@@ -2105,8 +2330,21 @@
       if (g.previousElementSibling) g.previousElementSibling.style.display = any ? "" : "none";
     });
   }
+  // when set, the next icon chosen re-skins that VIEW's tab instead of a node
+  var _iconPickerView = null;
+  function openViewIconPicker(viewId) {
+    var v = viewById(viewId); if (!v) return;
+    _iconPickerView = viewId;
+    buildIconPicker();
+    pickerTarget = null;
+    document.getElementById("ip-who").textContent = "· " + v.name;
+    document.querySelectorAll("#ip-body .ip-item").forEach(function (it) { it.classList.toggle("sel", it.getAttribute("data-key") === (v.icon || "")); });
+    document.getElementById("icon-modal").classList.add("open");
+    var si = document.getElementById("ip-search"); si.value = ""; filterIcons(""); setTimeout(function () { si.focus(); }, 30);
+  }
   function openIconPicker(id) {
     buildIconPicker();
+    _iconPickerView = null;
     pickerTarget = id;
     var who = "";
     if (meta[id]) {
@@ -2119,7 +2357,7 @@
     document.getElementById("icon-modal").classList.add("open");
     var s = document.getElementById("ip-search"); s.value = ""; filterIcons(""); setTimeout(function () { s.focus(); }, 30);
   }
-  function closeIconPicker() { document.getElementById("icon-modal").classList.remove("open"); pickerTarget = null; }
+  function closeIconPicker() { document.getElementById("icon-modal").classList.remove("open"); pickerTarget = null; _iconPickerView = null; }
   function setIcon(id, key) {
     if (!meta[id]) return;
     key = key || "";
@@ -2308,6 +2546,7 @@
 
     applyStatus();
     scheduleMinimap();
+    refreshTabBadges();      // a tab you're NOT on can still tell you something went down
     srvSyncFromSnapshot();   // keep the open Servers panel's status dots live
     if (_alertsReady && newlyDown.length) fireDownAlerts(newlyDown);
     _alertsReady = true;
@@ -2347,7 +2586,14 @@
   function saveLayout(silent) {
     clearTimeout(_autosaveT); _autosaveT = 0;
     setSaveStatus("saving");
-    var body = { drawflow: editor.export(), meta: meta };
+    captureActiveView();
+    // v2 = a list of views. The server just stores the blob, so the format is entirely ours;
+    // loadLayout still reads the old single-map shape (see normalizeLayout).
+    var body = {
+      version: 2,
+      activeViewId: activeViewId,
+      views: views.map(function (v) { return { id: v.id, name: v.name, icon: v.icon, drawflow: v.drawflow, meta: v.meta }; })
+    };
     fetch("/api/layout", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -2396,14 +2642,239 @@
 
   function loadLayout() {
     return fetch("/api/layout").then(function (r) { return r.json(); }).then(function (data) {
-      if (data && data.drawflow && data.drawflow.drawflow) {
-        _suppressUndo = true;
-        meta = data.meta || {};
-        editor.import(data.drawflow);
-        renderNodesFromData(data.drawflow.drawflow.Home.data);
-        _suppressUndo = false;
+      views = normalizeLayout(data);
+      activeViewId = (data && data.activeViewId) || views[0].id;
+      if (!viewById(activeViewId)) activeViewId = views[0].id;
+      _suppressUndo = true;
+      applyView(viewById(activeViewId));
+      _suppressUndo = false;
+      renderTabs();
+    }).catch(function () { views = [blankView("Main")]; activeViewId = views[0].id; renderTabs(); });
+  }
+
+  // ---------------- views (tabs) ----------------
+  // One editor, many maps. Only the active view's nodes are ever in the DOM; the others live
+  // as exported Drawflow documents in `views` and are swapped in on demand. Everything that
+  // reads the canvas (status, palette, search, minimap) therefore keeps working unchanged —
+  // it just sees whichever view is currently mounted.
+  var views = [], activeViewId = null;
+  var DEFAULT_VIEW_ICON = "solid:cube";
+  function emptyDoc() { return { drawflow: { Home: { data: {} } } }; }
+  function newViewId() { return "v-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e4).toString(36); }
+  function blankView(name, icon) { return { id: newViewId(), name: name || "New view", icon: icon || DEFAULT_VIEW_ICON, drawflow: emptyDoc(), meta: {} }; }
+  function viewById(id) { for (var i = 0; i < views.length; i++) if (views[i].id === id) return views[i]; return null; }
+  function activeIdx() { for (var i = 0; i < views.length; i++) if (views[i].id === activeViewId) return i; return 0; }
+
+  // Accepts the v2 multi-view document, the original single-map document, or nothing at all.
+  // Upgrading in place means an existing install just finds its map sitting on one tab.
+  function normalizeLayout(data) {
+    if (data && Array.isArray(data.views) && data.views.length) {
+      return data.views.map(function (v, i) {
+        return {
+          id: v.id || newViewId(),
+          name: v.name || ("View " + (i + 1)),
+          icon: v.icon || DEFAULT_VIEW_ICON,
+          drawflow: (v.drawflow && v.drawflow.drawflow) ? v.drawflow : emptyDoc(),
+          meta: v.meta || {}
+        };
+      });
+    }
+    if (data && data.drawflow && data.drawflow.drawflow) {
+      var one = blankView("Main");
+      one.drawflow = data.drawflow;
+      one.meta = data.meta || {};
+      return [one];
+    }
+    return [blankView("Main")];
+  }
+
+  // write whatever is on the canvas right now back into its view entry
+  function captureActiveView() {
+    var v = viewById(activeViewId);
+    if (!v || !editor) return;
+    v.drawflow = editor.export();
+    v.meta = meta;
+  }
+
+  function applyView(v) {
+    if (!v) return;
+    var wasSuppressed = _suppressUndo;
+    _suppressUndo = true;
+    clearSelection();
+    if (typeof clearConnSelection === "function") clearConnSelection();
+    editor.clear();
+    meta = v.meta || (v.meta = {});
+    var doc = (v.drawflow && v.drawflow.drawflow) ? v.drawflow : (v.drawflow = emptyDoc());
+    editor.import(doc);
+    // renderNodesFromData rebuilds the node bodies AND recomputes placedMonitorIds, so the
+    // palette's "what's left" is per-view — a sensor can appear on several views.
+    renderNodesFromData((doc.drawflow.Home && doc.drawflow.Home.data) || {});
+    _suppressUndo = wasSuppressed;
+    applyStatus();
+  }
+
+  function switchView(id, opts) {
+    if (id === activeViewId) return;
+    var target = viewById(id); if (!target) return;
+    captureActiveView();
+    activeViewId = id;
+    applyView(target);
+    // Undo history belongs to a map, not to the app — carrying it across a tab switch would
+    // let Ctrl+Z rewrite a view you can't even see.
+    undoStack.length = 0; redoStack.length = 0; updateHistBtns();
+    renderTabs();
+    if (!(opts && opts.noFit)) setTimeout(function () { fitView(); computeMinimap(); }, 30);
+    markDirty();
+  }
+
+  function addView() {
+    captureActiveView();
+    var v = blankView("View " + (views.length + 1));
+    views.push(v);
+    activeViewId = v.id;
+    applyView(v);
+    undoStack.length = 0; redoStack.length = 0; updateHistBtns();
+    renderTabs();
+    resetView();
+    markDirty();
+    openViewMenuFor(v.id);   // land straight in the rename field — naming it is the next thing you want
+  }
+
+  function duplicateView(id) {
+    var src = viewById(id); if (!src) return;
+    if (id === activeViewId) captureActiveView();
+    var copy = blankView(src.name + " copy", src.icon);
+    copy.drawflow = JSON.parse(JSON.stringify(src.drawflow));
+    copy.meta = JSON.parse(JSON.stringify(src.meta));
+    views.splice(views.indexOf(src) + 1, 0, copy);
+    activeViewId = copy.id;
+    applyView(copy);
+    undoStack.length = 0; redoStack.length = 0; updateHistBtns();
+    renderTabs();
+    markDirty();
+    toast("View duplicated");
+  }
+
+  function deleteView(id) {
+    if (views.length < 2) { toast("You need at least one view"); return; }
+    var v = viewById(id); if (!v) return;
+    if (id === activeViewId) captureActiveView();   // otherwise the count below reads a stale meta
+    var n = Object.keys(v.meta || {}).length;
+    if (n && !confirm('Delete the view "' + v.name + '"? It holds ' + n + ' item' + (n === 1 ? "" : "s") + '.')) return;
+    var i = views.indexOf(v);
+    views.splice(i, 1);
+    if (activeViewId === id) {
+      activeViewId = views[Math.max(0, i - 1)].id;
+      applyView(viewById(activeViewId));
+      undoStack.length = 0; redoStack.length = 0; updateHistBtns();
+      setTimeout(function () { fitView(); computeMinimap(); }, 30);
+    }
+    renderTabs();
+    markDirty();
+    toast("View deleted");
+  }
+
+  function moveView(id, dir) {
+    var i = views.indexOf(viewById(id)), j = i + dir;
+    if (i < 0 || j < 0 || j >= views.length) return;
+    var t = views[i]; views[i] = views[j]; views[j] = t;
+    renderTabs();
+    markDirty();
+  }
+
+  function setViewName(id, name) {
+    var v = viewById(id); if (!v) return;
+    name = (name || "").trim().slice(0, 40) || "Untitled";
+    if (v.name === name) return;
+    v.name = name; renderTabs(); markDirty();
+  }
+  function setViewIcon(id, key) {
+    var v = viewById(id); if (!v) return;
+    v.icon = key || "";        // a view is allowed to have no icon at all
+    renderTabs(); markDirty();
+  }
+
+  // how many sensors on a given view are DOWN right now. For views that aren't mounted this
+  // reads their stored meta, which is exactly why the tab can warn you about a map you're not
+  // looking at — the whole point of having more than one.
+  function viewDownCount(v) {
+    var m = (v.id === activeViewId) ? meta : (v.meta || {});
+    var n = 0;
+    Object.keys(m).forEach(function (k) {
+      var info = m[k];
+      if (!info || info.kind !== "sensor" || info.monitorId == null) return;
+      var st = lastStatusByMonitor[info.monitorId] || (monitorsById[info.monitorId] && monitorsById[info.monitorId].status);
+      if (st === "down") n++;
+    });
+    return n;
+  }
+
+  function renderTabs() {
+    var strip = document.getElementById("view-tabs"); if (!strip) return;
+    var add = document.getElementById("vt-add");
+    Array.prototype.slice.call(strip.querySelectorAll(".vtab")).forEach(function (t) { t.remove(); });
+    views.forEach(function (v) {
+      var b = document.createElement("button");
+      b.className = "vtab" + (v.id === activeViewId ? " active" : "");
+      b.dataset.viewId = v.id;
+      b.title = v.name;
+      var down = viewDownCount(v);
+      b.innerHTML =
+        (v.icon ? '<span class="vt-ic">' + iconSVG(v.icon) + "</span>" : "") +
+        '<span class="vt-nm">' + esc(v.name) + "</span>" +
+        (down ? '<span class="vt-down">' + (down > 99 ? "99+" : down) + "</span>" : "") +
+        '<span class="vt-more" role="button" data-more="1" title="Rename, icon, delete…">⋯</span>';
+      strip.insertBefore(b, add);
+    });
+    // The strip only earns its vertical space when there's a choice to make or a tab to add.
+    document.body.classList.toggle("tabs-on", views.length > 1 || !document.body.classList.contains("view-mode"));
+    var act = strip.querySelector(".vtab.active");
+    if (act && act.scrollIntoView) act.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
+  // Cheap per-tick update of just the down-count pills. renderTabs() rebuilds the whole strip,
+  // which would reset its scroll position and kill a hover every time a status arrives.
+  function refreshTabBadges() {
+    var strip = document.getElementById("view-tabs"); if (!strip) return;
+    views.forEach(function (v) {
+      var tab = strip.querySelector('.vtab[data-view-id="' + v.id + '"]'); if (!tab) return;
+      var n = viewDownCount(v), pill = tab.querySelector(".vt-down");
+      if (!n) { if (pill) pill.remove(); return; }
+      if (!pill) {
+        pill = document.createElement("span");
+        pill.className = "vt-down";
+        tab.insertBefore(pill, tab.querySelector(".vt-more"));
       }
-    }).catch(function () {});
+      var txt = n > 99 ? "99+" : String(n);
+      if (pill.textContent !== txt) pill.textContent = txt;
+    });
+  }
+
+  // ---- view menu (rename / icon / reorder / delete) ----
+  var _vmFor = null;
+  function openViewMenuFor(id, anchorEl) {
+    var v = viewById(id); if (!v) return;
+    _vmFor = id;
+    var m = document.getElementById("view-menu");
+    var input = document.getElementById("vm-name");
+    input.value = v.name;
+    var i = views.indexOf(v);
+    document.getElementById("vm-left").disabled = i <= 0;
+    document.getElementById("vm-right").disabled = i >= views.length - 1;
+    document.getElementById("vm-delete").disabled = views.length < 2;
+    m.style.display = "block";
+    var el = anchorEl || document.querySelector('.vtab[data-view-id="' + id + '"]') || document.getElementById("view-tabs");
+    var r = el.getBoundingClientRect(), w = m.offsetWidth || 232, h = m.offsetHeight || 240;
+    m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    m.style.top = Math.min(r.bottom + 6, window.innerHeight - h - 8) + "px";
+    setTimeout(function () { input.focus(); input.select(); }, 30);
+  }
+  function closeViewMenu(commit) {
+    var m = document.getElementById("view-menu");
+    if (!m || m.style.display !== "block") return;
+    if (commit !== false && _vmFor) setViewName(_vmFor, document.getElementById("vm-name").value);
+    m.style.display = "none";
+    _vmFor = null;
   }
 
   // ---------------- undo / redo ----------------
@@ -2767,10 +3238,13 @@
   }
   function scheduleMinimap() { if (_mmRaf || minimapOff()) return; _mmRaf = true; requestAnimationFrame(function () { _mmRaf = false; drawMinimap(); }); }
   function drawMinimap() {
-    var cv = document.getElementById("minimap"); if (!cv || minimapOff() || !_mmBox || !_mmNodes) return;
+    var cv = document.getElementById("minimap"); if (!cv || minimapOff()) return;
     var dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
     if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
     var ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    // Clear FIRST, then bail. Bailing before the clear used to leave the last drawing frozen on
+    // an empty map — very obvious now that switching to a fresh view empties the canvas.
+    if (!_mmBox || !_mmNodes) return;
     var spanX = _mmBox.maxX - _mmBox.minX, spanY = _mmBox.maxY - _mmBox.minY;
     var scale = Math.min(W / spanX, H / spanY), offX = (W - spanX * scale) / 2, offY = (H - spanY * scale) / 2;
     _mmBox.scale = scale; _mmBox.offX = offX; _mmBox.offY = offY;
@@ -2849,6 +3323,7 @@
       document.getElementById("btn-save").style.display = "";
     }
     markConnectors();
+    if (typeof renderTabs === "function") renderTabs();   // View hides + and ⋯, and may hide the strip
   }
 
   // ---------------- zoom / pan ----------------
@@ -2898,6 +3373,7 @@
     // deferred work that must NOT run per-frame: these read layout (forced reflow) or repaint
     // a canvas, and doing either mid-gesture is what turns a 16ms frame into a 40ms one.
     if (_selConn) positionConnDel();
+    if (selected.size) syncSelBar();   // same reason: it measures, so it waits for the gesture to settle
     cullViewport(true);
     scheduleMinimap();
   }
@@ -3284,12 +3760,78 @@
     if (s) s.classList.remove("selected");
     if (editor) editor.node_selected = null;
     if (typeof hideIconBubble === "function") hideIconBubble();
+    if (typeof hideSelBar === "function") hideSelBar();
   }
   function selectNodes(ids, additive) {
     ids = expandGroups(ids);   // clicking one member of a group selects the whole group
     if (!additive) clearSelection();
     ids.forEach(function (id) { selected.add(String(id)); var el = document.getElementById("node-" + id); if (el) el.classList.add("multi-selected"); });
     syncIconBubble();   // show/hide the icon colour swatches for a single selected graphic
+    syncSelBar();
+  }
+
+  // ---- contextual selection toolbar ----
+  // The one visible, no-keyboard, no-right-click way to act on a selection. Deleting used to
+  // require either the Delete key or a right-click, neither of which announces itself and
+  // neither of which exists on a touchscreen.
+  function deleteSelection() {
+    if (document.body.classList.contains("view-mode")) return;
+    if (!selected.size) return;
+    var dels = expandGroups(Array.from(selected)).filter(function (id) { return meta[id] && !isLocked(id); });
+    if (!dels.length) { toast("Locked — unlock it first to delete"); return; }
+    pushUndo();
+    dels.forEach(function (id) { try { editor.removeNodeId("node-" + id); } catch (_) {} });
+    clearSelection();
+    toast(dels.length > 1 ? dels.length + " items deleted" : "Deleted");
+  }
+  function selBar() { return document.getElementById("sel-bar"); }
+  function hideSelBar() { var b = selBar(); if (b) b.style.display = "none"; }
+  function syncSelBar() {
+    var b = selBar(); if (!b) return;
+    if (document.body.classList.contains("view-mode") || !selected.size) { hideSelBar(); return; }
+    var ids = Array.from(selected).filter(function (k) { return meta[k]; });
+    if (!ids.length) { hideSelBar(); return; }
+
+    // tailor the buttons to what's actually selected
+    var anyGrouped = ids.some(function (k) { return meta[k] && meta[k].groupId; });
+    var anyLocked = ids.some(isLocked);
+    var canDup = ids.some(function (k) { return meta[k].kind !== "sensor"; });   // sensors are one-per-view
+    var show = function (elid, on) { var el = document.getElementById(elid); if (el) el.style.display = on ? "" : "none"; };
+    show("sb-duplicate", canDup);
+    show("sb-lock", !anyLocked);
+    show("sb-unlock", anyLocked);
+    show("sb-group", ids.length >= 2 && !anyGrouped);
+    show("sb-ungroup", anyGrouped);
+    var cnt = document.getElementById("sb-count");
+    if (cnt) { cnt.hidden = ids.length < 2; cnt.textContent = ids.length + " selected"; }
+
+    // selection bounding box -> screen coords
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    ids.forEach(function (id) {
+      var g = geomOf(id); if (!g) return;
+      minX = Math.min(minX, g.L); minY = Math.min(minY, g.T);
+      maxX = Math.max(maxX, g.R); maxY = Math.max(maxY, g.B);
+    });
+    if (!isFinite(minX)) { hideSelBar(); return; }
+    var dr = document.getElementById("drawflow").getBoundingClientRect();
+    var cx = dr.left + sX((minX + maxX) / 2);
+    var top = dr.top + sY(minY), bot = dr.top + sY(maxY);
+
+    b.style.display = "flex";
+    var w = b.offsetWidth || 200, h = b.offsetHeight || 38;
+    // The rich-text / icon colour bubbles already own the space directly above a node, and the
+    // native ✕ pokes out of the top-right corner — so go BELOW whenever either is in play, or
+    // whenever there simply isn't room above.
+    var bubbleAbove = ["rt-bubble", "icon-bubble"].some(function (k) {
+      var el = document.getElementById(k); return el && el.style.display && el.style.display !== "none";
+    });
+    var below = bubbleAbove || (top - h - 22 < dr.top + 6);
+    b.classList.toggle("below", below);
+    // `top` is the bar's BOTTOM edge when placed above (translate(-50%,-100%)) and its top edge
+    // when placed below — hence the two different clamps against the canvas / window edges.
+    b.style.top = (below ? Math.min(bot + 20, window.innerHeight - h - 8)
+                         : Math.max(top - 20, dr.top + h + 4)) + "px";
+    b.style.left = Math.max(w / 2 + 8, Math.min(cx, window.innerWidth - w / 2 - 8)) + "px";
   }
 
   // ---- groups + locks ----
@@ -3469,6 +4011,7 @@
       if (!group.length) group = [{ id: id, px: d.pos_x, py: d.pos_y }];
       _drag = { id: id, mx: e.clientX, my: e.clientY, px: d.pos_x, py: d.pos_y,
                 w: node.offsetWidth, h: node.offsetHeight, others: otherGeoms(id, selected, isFrameNode(id)), group: group };
+      document.body.classList.add("dragging-node");   // parks the selection toolbar for the drag
       _moveUndo = snapshot(); _didMove = false;   // recorded only if an actual move happens
       return;   // let Drawflow drive the node drag too; we overlay snapping/group
     }
@@ -3599,6 +4142,8 @@
     if (_drag && _didMove) computeMinimap();
     _moveUndo = null; _didMove = false;
     _drag = null; clearGuides();
+    document.body.classList.remove("dragging-node");
+    if (selected.size) syncSelBar();   // follow the selection to wherever it landed
   }
 
   // wrap the currently-selected nodes (or a default rect) in a labeled frame
@@ -3658,6 +4203,7 @@
       renderPalette();
       maybeShowEmptyHint();
       computeMinimap();
+      syncSelBar();   // e.g. deleted via Drawflow's own ✕ — the toolbar must follow or vanish
     });
     editor.on("connectionStart", function () { if (!_suppressUndo) _connUndo = snapshot(); });
     editor.on("connectionCreated", function () { recomputeBoxes(); markConnectors(); markConnectionStatus(); requestAnimationFrame(refreshConnections); if (!_suppressUndo && _connUndo) { commitUndo(_connUndo); _connUndo = null; } });
@@ -3679,12 +4225,115 @@
       if (!selected.has(String(id))) selectNodes([id], false);
       showLayerMenu(e.clientX, e.clientY);
     });
+    // ---- view tabs ----
+    var strip = document.getElementById("view-tabs");
+    if (strip) strip.addEventListener("click", function (e) {
+      var more = e.target.closest("[data-more]");
+      var tab = e.target.closest(".vtab");
+      if (e.target.closest("#vt-add")) { addView(); return; }
+      if (!tab) return;
+      var id = tab.dataset.viewId;
+      // ⋯ on the active tab opens the editor; ⋯ on an inactive tab switches to it first, so a
+      // single press never edits a view you aren't looking at
+      if (more) {
+        e.stopPropagation();
+        if (_vmFor === id) { closeViewMenu(); return; }   // second press closes it again
+        if (id !== activeViewId) { switchView(id); setTimeout(function () { openViewMenuFor(id); }, 40); }
+        else openViewMenuFor(id, tab);
+        return;
+      }
+      switchView(id);
+    });
+    // a plain wheel over the strip scrolls it sideways — a trackpad or a mouse both work
+    if (strip) strip.addEventListener("wheel", function (e) {
+      if (e.deltaY === 0 || strip.scrollWidth <= strip.clientWidth) return;
+      e.preventDefault();
+      strip.scrollLeft += e.deltaY;
+    }, { passive: false });
+    // double-click a tab to rename it — the shortcut every tabbed app has
+    if (strip) strip.addEventListener("dblclick", function (e) {
+      var tab = e.target.closest(".vtab"); if (!tab) return;
+      if (document.body.classList.contains("view-mode")) return;
+      e.preventDefault();
+      if (tab.dataset.viewId !== activeViewId) switchView(tab.dataset.viewId);
+      openViewMenuFor(tab.dataset.viewId, tab);
+    });
+    // long-press a tab on touch = the same thing (there is no right-click on a phone)
+    if (strip) {
+      var _lpT = 0;
+      strip.addEventListener("touchstart", function (e) {
+        var tab = e.target.closest(".vtab"); if (!tab) return;
+        clearTimeout(_lpT);
+        _lpT = setTimeout(function () {
+          if (document.body.classList.contains("view-mode")) return;
+          if (tab.dataset.viewId !== activeViewId) switchView(tab.dataset.viewId);
+          openViewMenuFor(tab.dataset.viewId, tab);
+        }, 550);
+      }, { passive: true });
+      ["touchend", "touchmove", "touchcancel"].forEach(function (ev) {
+        strip.addEventListener(ev, function () { clearTimeout(_lpT); }, { passive: true });
+      });
+    }
+    var vmName = document.getElementById("vm-name");
+    if (vmName) {
+      vmName.addEventListener("input", function () { if (_vmFor) setViewName(_vmFor, vmName.value); });
+      vmName.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); closeViewMenu(); }
+        else if (e.key === "Escape") { e.preventDefault(); closeViewMenu(false); }
+        e.stopPropagation();   // don't let Delete/Backspace reach the canvas shortcut handler
+      });
+    }
+    var vmWire = {
+      "vm-icon": function (id) { closeViewMenu(); openViewIconPicker(id); },
+      "vm-duplicate": function (id) { closeViewMenu(); duplicateView(id); },
+      "vm-left": function (id) { moveView(id, -1); },
+      "vm-right": function (id) { moveView(id, 1); },
+      "vm-delete": function (id) { closeViewMenu(false); deleteView(id); }
+    };
+    Object.keys(vmWire).forEach(function (bid) {
+      var b = document.getElementById(bid); if (!b) return;
+      b.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        if (b.disabled || !_vmFor) return;
+        var id = _vmFor;
+        if (bid === "vm-left" || bid === "vm-right") { setViewName(id, vmName.value); vmWire[bid](id); openViewMenuFor(id); return; }
+        vmWire[bid](id);
+      });
+    });
+    document.addEventListener("mousedown", function (e) {
+      var m = document.getElementById("view-menu");
+      if (m && m.style.display === "block" && !(e.target.closest && (e.target.closest("#view-menu") || e.target.closest("[data-more]")))) closeViewMenu();
+    }, true);
+
+    // contextual selection toolbar wiring
+    var sb = document.getElementById("sel-bar");
+    if (sb) {
+      // pointerdown+stop: the document-capture canvas handler would otherwise treat a press on
+      // the toolbar as a click on empty canvas and clear the very selection we're acting on
+      sb.addEventListener("mousedown", function (e) { e.stopPropagation(); }, true);
+      sb.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-sb]"); if (!btn) return;
+        e.preventDefault(); e.stopPropagation();
+        var cmd = btn.getAttribute("data-sb");
+        if (cmd === "delete") return deleteSelection();
+        if (cmd === "layers") {
+          var r = btn.getBoundingClientRect();
+          showLayerMenu(r.left, r.bottom + 6);
+          return;
+        }
+        layerCmd(cmd);        // duplicate / lock / unlock / group / ungroup
+        syncSelBar();         // the available actions change once you've locked or grouped
+      });
+    }
+    window.addEventListener("resize", function () { if (selected.size) syncSelBar(); });
+
     // layer menu wiring
     var layerMenu = document.getElementById("layer-menu");
     if (layerMenu) layerMenu.addEventListener("click", function (e) {
       var it = e.target.closest(".lm-item"); if (!it) return;
       layerCmd(it.getAttribute("data-cmd"));
       hideLayerMenu();
+      syncSelBar();
     });
     document.addEventListener("mousedown", function (e) {
       if (layerMenu && layerMenu.style.display === "block" && !(e.target.closest && e.target.closest("#layer-menu"))) hideLayerMenu();
@@ -3942,6 +4591,12 @@
     window.addEventListener("keydown", function (ev) {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); saveLayout(); return; }
       if (ev.key === "/" && !isEditingText()) { ev.preventDefault(); openSearch(); return; }   // search works in any mode
+      // Alt+1..9 jumps straight to a view, in either mode. (Ctrl+1..9 belongs to the browser's
+      // own tab switcher, so it's not ours to take.)
+      if (ev.altKey && !ev.ctrlKey && !ev.metaKey && /^Digit[1-9]$/.test(ev.code || "") && !isEditingText()) {
+        var vi = parseInt(ev.code.slice(5), 10) - 1;
+        if (views[vi]) { ev.preventDefault(); switchView(views[vi].id); return; }
+      }
       if (isEditingText() || document.body.classList.contains("view-mode")) return;
       if (ev.key === "Delete" || ev.key === "Backspace") {
         if (_selConn) {                       // a connection line is selected -> remove it
@@ -3950,11 +4605,7 @@
           deleteSelectedConnection();
         } else if (selected.size) {
           ev.preventDefault();
-          var dels = Array.from(selected).filter(function (id) { return !isLocked(id); });   // locked stays put
-          if (!dels.length) { toast("Locked — unlock it first to delete"); return; }
-          pushUndo();
-          dels.forEach(function (id) { try { editor.removeNodeId("node-" + id); } catch (_) {} });
-          clearSelection();
+          deleteSelection();   // shared with the selection toolbar's Delete button
         }
       } else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
         ev.preventDefault(); copySelection();
@@ -3982,6 +4633,7 @@
           ev.key === "ArrowUp" ? -step : ev.key === "ArrowDown" ? step : 0
         );
       } else if (ev.key === "Escape") {
+        closeViewMenu(false);
         clearSelection();
         clearConnSelection();
         hideLayerMenu();

@@ -3,7 +3,9 @@
      - App shell (page + vendored JS/CSS + icons): cache-first, refreshed in the background.
      - Everything under /api and /ws: never touched (always goes straight to the network so the
        monitoring data and the live WebSocket stay real-time). */
-const CACHE = "kuma-flowmap-v1";
+/* Bump this whenever the shell changes shape enough that a stale cached copy would be wrong —
+   the activate handler deletes every cache that isn't the current name. */
+const CACHE = "kuma-flowmap-v2";
 const SHELL = [
   "/",
   "/static/vendor/drawflow.min.js",
