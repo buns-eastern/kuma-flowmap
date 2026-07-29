@@ -954,35 +954,15 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
   #conn-del:active { transform: translate(-50%, -50%) scale(.96); }
   #conn-del svg { display: block; }
   body.view-mode #conn-del, body.mobile #conn-del { display: none !important; }
-  body.view-mode .drawflow-delete { display: none !important; }   /* Drawflow's native node/connection delete ✕ is edit-only */
   body.view-mode #save-status { display: none; }                  /* nothing to save in View */
 
-  /* --- Drawflow's native delete ✕ ---------------------------------------------------------
-     Vendor CSS draws it as a black circle whose glyph is the literal text "x" in a monospace
-     font, vertically centred with `line-height: 30px` on a 30px box that also carries a 2px
-     border — so the content box is 26px tall and the glyph rode low and left of centre. A
-     lowercase monospace "x" also has no descender, which drops it further off the optical
-     centre. We hide the text outright (font-size: 0) and paint a real, geometrically centred
-     ✕ as a background SVG, then restyle the chip to match the app instead of the vendor. */
-  .drawflow-delete {
-    width: 26px !important; height: 26px !important;
-    font-size: 0 !important; line-height: 0 !important;
-    background-color: var(--down) !important;
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M17.5 6.5 6.5 17.5M6.5 6.5l11 11'/%3E%3C/svg%3E") !important;
-    background-repeat: no-repeat !important;
-    background-position: center center !important;
-    background-size: 13px 13px !important;
-    border: 2px solid var(--panel) !important;
-    box-shadow: 0 3px 10px rgba(0,0,0,.4) !important;
-    transition: transform .12s, filter .12s;
-  }
-  .drawflow-delete:hover { filter: brightness(1.12); transform: scale(1.1); }
-  .parent-node .drawflow-delete { right: -13px !important; top: -13px !important; }
-  .drawflow > .drawflow-delete { margin-left: -13px !important; margin-top: 13px !important; }
-  @media (pointer: coarse) {   /* fingers need a bigger target than a 26px dot */
-    .drawflow-delete { width: 32px !important; height: 32px !important; background-size: 15px 15px !important; }
-    .parent-node .drawflow-delete { right: -16px !important; top: -16px !important; }
-  }
+  /* Drawflow's native delete ✕ — the red circle that popped up on a node's corner — is gone.
+     Deleting now lives in three places that all announce themselves: the red bin on the
+     selection toolbar, Delete on the right-click menu, and the Delete key. A fourth affordance
+     that appeared only after a right-click, floated over the node's own corner and duplicated
+     the toolbar sitting right above it was just noise. (Wires keep their own "Delete link"
+     button, #conn-del, which is a different control.) */
+  .drawflow-delete { display: none !important; }
 
   /* right-click layer menu (bring to front / send to back, Lucid-style) */
   #layer-menu {
@@ -2723,7 +2703,11 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
     // let Ctrl+Z rewrite a view you can't even see.
     undoStack.length = 0; redoStack.length = 0; updateHistBtns();
     renderTabs();
-    if (!(opts && opts.noFit)) setTimeout(function () { fitView(); computeMinimap(); }, 30);
+    // Fit SYNCHRONOUSLY, in the same task as the swap. Deferring it by even one timeout let the
+    // browser paint a frame in between — the new view's nodes drawn at the OLD view's zoom and
+    // pan — which read as a flash of zoomed-in equipment before it settled. fitView reads
+    // offsetWidth, which forces layout, so the measurements are already correct here.
+    if (!(opts && opts.noFit)) { fitView(); computeMinimap(); }
     markDirty();
   }
 
@@ -2767,7 +2751,7 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
       activeViewId = views[Math.max(0, i - 1)].id;
       applyView(viewById(activeViewId));
       undoStack.length = 0; redoStack.length = 0; updateHistBtns();
-      setTimeout(function () { fitView(); computeMinimap(); }, 30);
+      fitView(); computeMinimap();   // same task as the swap, so no half-fitted frame is painted
     }
     renderTabs();
     markDirty();

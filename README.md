@@ -114,8 +114,9 @@ so a big site doesn't have to live on one sprawling page.
   can set a fixed colour, just like a text note. Double-click to swap the glyph.
 
 **Selection toolbar** — select anything in Edit mode and a small toolbar appears beside it with
-**Duplicate**, **Lock**, **Group**, **Arrange** and a red **Delete**. It's the quickest way to remove
-something; the right-click menu and the `Delete` key still do the same jobs.
+**Duplicate**, **Lock**, **Group**, **Arrange** and a red **Delete**. This (or the `Delete` key) is how
+you remove something — there's no ✕ hiding on the node's corner any more. Right-click still opens the
+layering / grouping / clipboard menu.
 
 **Arrange precisely**
 - Drag to move; edge/center **alignment guides** and **equal-spacing guides** appear as you go.
@@ -127,6 +128,7 @@ something; the right-click menu and the `Delete` key still do the same jobs.
 - **Layer order:** right-click → *Bring to Front / Send to Back*, or `Ctrl+]` / `Ctrl+[`.
 - **Wire things:** drag from a node's **right-side dot** (output) to another node's **left-side dot** (input).
 - **Delete a wire:** click it and hit the red **✕ Delete link** button, press `Delete`, or double-click it.
+- **Delete a node:** the red bin on the selection toolbar, or the `Delete` key.
 
 **Settings (⚙)** — four themes (two dark, two light); toggles for the sensor's 2nd line, the type badge,
 the **source-server** label, a down-alert sound, desktop notifications, and the minimap; plus **Manage
