@@ -5,7 +5,7 @@
        monitoring data and the live WebSocket stay real-time). */
 /* Bump this whenever the shell changes shape enough that a stale cached copy would be wrong —
    the activate handler deletes every cache that isn't the current name. */
-const CACHE = "kuma-flowmap-v2";
+const CACHE = "kuma-flowmap-2026.07.29-3";
 const SHELL = [
   "/",
   "/static/vendor/drawflow.min.js",

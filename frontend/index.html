@@ -13,7 +13,30 @@
 <meta name="apple-mobile-web-app-title" content="FlowMap" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="icon" type="image/png" href="/static/icon-192.png" />
-<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
+<!-- Keep an INSTALLED app on the current build. Left to itself a PWA will happily sit on a
+     months-old shell: the home-screen app never really "navigates", so nothing prompts the
+     service worker to look for a new one. That is how a phone ends up running code too old to
+     read the layout the desktop just saved — the map comes up blank and the new UI is simply
+     absent. So: check at launch, check every time the app returns to the foreground, and
+     reload once the replacement worker takes over. -->
+<script>
+if ('serviceWorker' in navigator) {
+  var _hadCtrl = !!navigator.serviceWorker.controller, _swReloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!_hadCtrl || _swReloading) return;   // a first-ever install is not an update
+    _swReloading = true;
+    location.reload();
+  });
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').then(function (reg) {
+      var poke = function () { try { reg.update(); } catch (e) {} };
+      poke();
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) poke(); });
+      setInterval(poke, 30 * 60 * 1000);
+    }).catch(function () {});
+  });
+}
+</script>
 <!-- Real viewport height. In an installed PWA (iOS especially) 100% / 100dvh can resolve short
      of the window we were actually given, leaving a dead strip of blank space under the map.
      window.innerHeight is the one measurement that's right in every shell. Deliberately NOT
@@ -340,6 +363,7 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
   .theme-prev { height: 42px; display: flex; align-items: center; gap: 5px; padding: 0 11px; position: relative; }
   .theme-prev .sw { width: 13px; height: 13px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.25) inset; }
   .theme-name { font-size: 11.5px; font-weight: 600; padding: 6px 10px; color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+  .sm-build { margin: 14px 2px 2px; text-align: center; font-size: 10.5px; color: var(--hint); letter-spacing: .3px; }
   .sm-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; font-size: 13px; color: var(--text); }
   .sm-row .sub2 { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
   .switch { width: 40px; height: 22px; border-radius: 999px; background: var(--border-2); position: relative; cursor: pointer; border: 0; flex: none; transition: background .15s; }
@@ -1307,6 +1331,9 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
             <div><div>Log out</div></div>
           </button>
         </div>
+        <!-- which build this browser is actually running. An installed PWA can be a version
+             behind the server without any other visible sign; this makes that a five-second check. -->
+        <div class="sm-build" id="sm-build"></div>
       </div>
     </div>
     </div><!-- /.tool-cluster -->
@@ -1515,6 +1542,11 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
 <script>
 (function () {
   "use strict";
+
+  // Bump on every deploy. Shown at the bottom of the Settings menu so "is this phone actually
+  // running the build I just pushed?" is answerable without guessing.
+  var BUILD = "2026.07.29-3";
+  var LAYOUT_VERSION = 2;   // the newest layout format this build knows how to read
 
   // ---------------- state ----------------
   var monitorsById = {};        // id -> {id,name,type,target,status,active}
@@ -2648,6 +2680,11 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
   // Accepts the v2 multi-view document, the original single-map document, or nothing at all.
   // Upgrading in place means an existing install just finds its map sitting on one tab.
   function normalizeLayout(data) {
+    // A layout written by a NEWER build than this one is the failure that just bit us in
+    // reverse: rather than quietly drawing an empty map, say so out loud.
+    if (data && typeof data.version === "number" && data.version > LAYOUT_VERSION) {
+      setTimeout(function () { toast("This map was saved by a newer version of FlowMap — reload the app to update.", 6000); }, 900);
+    }
     if (data && Array.isArray(data.views) && data.views.length) {
       return data.views.map(function (v, i) {
         return {
@@ -4501,6 +4538,9 @@ if(window.visualViewport)visualViewport.addEventListener('resize',later);})();</
     // problems-only filter
     applyProblemsFilter();
     document.getElementById("btn-problems").addEventListener("click", toggleProblems);
+
+    var bstamp = document.getElementById("sm-build");
+    if (bstamp) bstamp.textContent = "Kuma FlowMap · build " + BUILD;
 
     // alerts + minimap prefs
     applyAlertViewPrefs();

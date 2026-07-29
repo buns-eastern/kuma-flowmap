@@ -190,6 +190,14 @@ docker compose up -d --build     # or: ./update.sh
 changes (a plain restart won't). Your **data volume — login, servers, and saved map — is untouched** by
 rebuilds.
 
+**Installed (home-screen) copies.** A PWA never really "navigates", so nothing normally prompts it to
+look for a new build — it can happily sit months behind the server. The app now checks for one at
+launch and every time you bring it back to the foreground, and reloads itself when a new version is
+ready. If you ever suspect a phone is stale, open **⚙ Settings** and read the **build** line at the very
+bottom: it's the build *that browser* is running, so compare it with a desktop that you know is current.
+To force an update by hand, close the app fully (swipe it away from the app switcher) and relaunch; if it
+still won't budge, remove it from the home screen and re-add it.
+
 ---
 
 ## Project layout
